@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.util.Size
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -27,14 +29,19 @@ import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
+import org.tensorflow.lite.t
 
 class MainActivity : AppCompatActivity() {
+    private lateinit var fpsView: TextView
+    private lateinit var linearLayout: LinearLayout
+    private var tik = System.currentTimeMillis()
     private val inputSize:Int=640
     private lateinit var bitmapBuffer: Bitmap
     private var imageRotationDegrees: Int = 0
     private lateinit var previewView : PreviewView
     private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
     private val modelPath = "yolov8n_int8.tflite"
+    private val labelPath = "yolov8n_int8_labels.txt"
     private val tfImageProcessor by lazy {
         val cropSize = minOf(bitmapBuffer.width, bitmapBuffer.height)
         ImageProcessor.Builder()
@@ -53,6 +60,12 @@ class MainActivity : AppCompatActivity() {
             FileUtil.loadMappedFile(this, modelPath),
             InterpreterApi.Options().setRuntime(TfLiteRuntime.FROM_SYSTEM_ONLY).addDelegate(nnApiDelegate))
     }
+    private val detector by lazy {
+        ObjectDetector.createFromFile(
+            tflite,
+            FileUtil.loadLabels(this, labelPath)
+        )
+    }
     private val tfInputSize by lazy {
         val inputIndex = 0
         val inputShape = tflite.getInputTensor(inputIndex).shape()
@@ -61,6 +74,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.camera_fragment)
+        fpsView = findViewById(R.id.fpsView)
+        linearLayout=findViewById(R.id.linearLayout)
+        // Start a timer or use a frame callback to update FPS
         TfLite.initialize(this)
         //get camera permissions
         if(checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -71,11 +87,23 @@ class MainActivity : AppCompatActivity() {
         cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener(Runnable {
             val cameraProvider = cameraProviderFuture.get()
-            bindPreview(cameraProvider)
+            bindCameraUseCase(cameraProvider)
         }, ContextCompat.getMainExecutor(this))
 
     }
-    fun bindPreview(cameraProvider : ProcessCameraProvider) {
+    private fun computeFPS(tok:Long){
+        val fps = 1000f/(tok - tik)
+        val fpsText = "FPS: ${"%.2f".format(fps)}"
+        fpsView.text = fpsText
+        tik=System.currentTimeMillis()
+    }
+    public override fun onDestroy() {
+        tflite.close()
+        nnApiDelegate.close()
+        super.onDestroy()
+
+    }
+    private fun bindCameraUseCase(cameraProvider : ProcessCameraProvider) {
         val preview : Preview = Preview.Builder()
             .build()
 
@@ -90,6 +118,7 @@ class MainActivity : AppCompatActivity() {
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .build()
+
         imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), ImageAnalysis.Analyzer { imageProxy ->
             if (!::bitmapBuffer.isInitialized) {
                 // The image rotation and RGB image buffer are initialized only once
@@ -102,12 +131,17 @@ class MainActivity : AppCompatActivity() {
             predict(bitmap)
             // after done, release the ImageProxy object
             imageProxy.close()
+
+            computeFPS(System.currentTimeMillis())
+
         })
+
+
 
 
         var camera = cameraProvider.bindToLifecycle(this as LifecycleOwner, cameraSelector, preview, imageAnalysis)
     }
-    fun predict(bitmap: Bitmap) {
+    private fun predict(bitmap: Bitmap) {
         /*val inputSize:Int=640
         val inputChannels:Int=3
         val byteBuffer:ByteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * inputChannels)//RGB 640x640
@@ -130,13 +164,13 @@ class MainActivity : AppCompatActivity() {
         image.load(bitmap)
 
 // Runs model inference and gets result.
-        val outputBuffer = TensorBuffer.createFixedSize(tflite.getOutputTensor(0).shape(),DataType.FLOAT32).buffer
-        tflite.run(tfImageProcessor.process(image).buffer,outputBuffer)
-
-// Releases model resources if no longer used.
-
-
-
+        val outputBuffer = TensorBuffer.createFixedSize(tflite.getOutputTensor(0).shape(),tflite.getOutputTensor(0).dataType())
+        tflite.run(tfImageProcessor.process(image).buffer,outputBuffer.buffer)
+        val outputData = outputBuffer.floatArray
+        val maxIndex = outputData.indices.maxByOrNull { outputData[it] } ?: -1
+        println("Predicted class index: " + outputData[maxIndex])
+    //for(i in outputBuffer.)
+        //linearLayout.addView()
     }
 
 

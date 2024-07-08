@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.models"
-        minSdk = 24
+        minSdk = 28
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -65,7 +65,7 @@ dependencies {
     implementation(libs.androidx.constraintlayout.compose)
     implementation(libs.play.services.tflite.java)
     implementation(libs.play.services.tflite.support)
-
+    implementation(libs.play.services.tflite.task.vision)
 
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.camera.lifecycle)
