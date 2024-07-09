@@ -15,10 +15,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.example.models.ui.theme.ObjectDetector
 import com.google.android.gms.tflite.java.TfLite
 import com.google.common.util.concurrent.ListenableFuture
 import org.tensorflow.lite.DataType
-import org.tensorflow.lite.InterpreterApi
+import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.InterpreterApi.Options.TfLiteRuntime
 import org.tensorflow.lite.nnapi.NnApiDelegate
 import org.tensorflow.lite.support.common.FileUtil
@@ -28,8 +29,6 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
-import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
-import org.tensorflow.lite.t
 
 class MainActivity : AppCompatActivity() {
     private lateinit var fpsView: TextView
@@ -56,12 +55,12 @@ class MainActivity : AppCompatActivity() {
         NnApiDelegate()
     }
     private val tflite by lazy {
-        InterpreterApi.create(
+        Interpreter(
             FileUtil.loadMappedFile(this, modelPath),
-            InterpreterApi.Options().setRuntime(TfLiteRuntime.FROM_SYSTEM_ONLY).addDelegate(nnApiDelegate))
+            Interpreter.Options().setRuntime(TfLiteRuntime.FROM_SYSTEM_ONLY).addDelegate(nnApiDelegate))
     }
     private val detector by lazy {
-        ObjectDetector.createFromFile(
+        ObjectDetector(
             tflite,
             FileUtil.loadLabels(this, labelPath)
         )
@@ -164,13 +163,9 @@ class MainActivity : AppCompatActivity() {
         image.load(bitmap)
 
 // Runs model inference and gets result.
-        val outputBuffer = TensorBuffer.createFixedSize(tflite.getOutputTensor(0).shape(),tflite.getOutputTensor(0).dataType())
-        tflite.run(tfImageProcessor.process(image).buffer,outputBuffer.buffer)
-        val outputData = outputBuffer.floatArray
-        val maxIndex = outputData.indices.maxByOrNull { outputData[it] } ?: -1
-        println("Predicted class index: " + outputData[maxIndex])
-    //for(i in outputBuffer.)
-        //linearLayout.addView()
+        val results = detector.detect(image)
+        //println(results[0].label)
+
     }
 
 

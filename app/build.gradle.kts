@@ -65,8 +65,7 @@ dependencies {
     implementation(libs.androidx.constraintlayout.compose)
     implementation(libs.play.services.tflite.java)
     implementation(libs.play.services.tflite.support)
-    implementation(libs.play.services.tflite.task.vision)
-
+    implementation(libs.tensorflow.lite.task.vision)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
