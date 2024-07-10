@@ -7,11 +7,9 @@ import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 
 class ObjectDetector(private val tflite: Interpreter, private val labels: List<String>) {
     data class Detection(val location: RectF, val label: String, val score: Float)
+    var ROW_SIZE = tflite.getOutputTensor(0).shape()[1]//4 coord numbers (x_center,y_center,width,height) + #classes
 
     val outputBuffer = TensorBuffer.createFixedSize(tflite.getOutputTensor(0).shape(),tflite.getOutputTensor(0).dataType())
-
-    //output of yolo inference [1,84,8400] -> [8400,84]
-    private val transposedOutput = Array(tflite.getOutputTensor(0).shape()[1]){FloatArray(tflite.getOutputTensor(0).shape()[2])}
 
     /*
     Location tensor (kTfLiteFloat32):
@@ -35,42 +33,38 @@ class ObjectDetector(private val tflite: Interpreter, private val labels: List<S
     integer num_results as a tensor of size [1]. 
      */
     private val numResults = FloatArray(1)
-    val detections get() = (0 until MAX_DETECTIONS).map{
-        /*Detection(
-            location = outputToRectF(yoloOutput[0][0][it],
-                             yoloOutput[0][1][it],
-                             yoloOutput[0][2][it],
-                             yoloOutput[0][3][it]),
-            label = outputToLabel(yoloOutput[0][it]),
-            score = outputToScore(yoloOutput[0][it])
-        )*/
+    private val detections : List<Detection> get() = (0 until MAX_DETECTIONS).map{
+        Detection(
+            location = outputToRectF(it*ROW_SIZE),
+            label = outputToLabel(it*ROW_SIZE),
+            score = outputToScore(it*ROW_SIZE)
+        )
 
     }
-    private fun outputToRectF(x:Float, y: Float, w: Float, h: Float): RectF {
+    private fun outputToRectF(index:Int): RectF {
+        val x = outputBuffer.floatArray[index]
+        val y = outputBuffer.floatArray[index+1]
+        val w = outputBuffer.floatArray[index+2]
+        val h = outputBuffer.floatArray[index+3]
         return RectF(x-w/2, y+h/2, x + w/2, y - h/2)
     }
-    private fun outputToLabel(outputArray: FloatArray): String{
-        val classConfValues = outputArray
+    private fun outputToLabel(start: Int): String{
+        val classConfValues = outputBuffer.floatArray.copyOfRange(start,start+ROW_SIZE-4)
         val maxVal = classConfValues.maxOrNull()
-        val maxIdx = classConfValues.indexOfFirst { it == maxVal }
-        return labels[maxIdx]
-
-
+        if (maxVal != null && maxVal > 0) {
+            val maxIdx = classConfValues.indexOfFirst { it == maxVal }
+            return labels[maxIdx]
+        }
+        else return ""
     }
-    private fun outputToScore(outputArray: FloatArray): Float{
-        val classConfValues = outputArray.copyOfRange(4, outputArray.size)
+    private fun outputToScore(start: Int): Float{
+        val classConfValues = outputBuffer.floatArray.copyOfRange(start, start+ROW_SIZE-4)
         val maxVal = classConfValues.maxOrNull()
         return maxVal?:0f
     }
-    fun detect(image: TensorImage): List<Detection>? {
+    fun detect(image: TensorImage): List<Detection> {
         tflite.run(image.buffer, outputBuffer.buffer)
-        val outputArray = outputBuffer.floatArray
-        for(i in 0 until tflite.getOutputTensor(0).shape()[2]){
-            for(j in 0 until tflite.getOutputTensor(0).shape()[1]) {
-                transposedOutput[j][i] = outputArray[i * j + j]
-            }
-        }
-        return null//detections
+        return detections
     }
     companion object {
         const val MAX_DETECTIONS = 10
