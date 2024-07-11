@@ -42,22 +42,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var linearLayout: LinearLayout
     private lateinit var boxPrediction: View
     private var tik = System.currentTimeMillis()
-    private val inputSize:Int=640
+    private val inputSize:Int=160
     private lateinit var bitmapBuffer: Bitmap
     private var imageRotationDegrees: Int = 0
     private lateinit var previewView : PreviewView
     private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
-    private val modelPath = "yolov8n_int8.tflite"
+    private val modelPath = "yolov8n_full_integer_quant.tflite"
     private val labelPath = "yolov8n_int8_labels.txt"
 
     private val tfImageProcessor by lazy {
-        val cropSize = minOf(bitmapBuffer.width, bitmapBuffer.height)
+        val cropSize = minOf(inputSize, inputSize)
         ImageProcessor.Builder()
             .add(ResizeWithCropOrPadOp(cropSize, cropSize))
             .add(ResizeOp(
                 tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
             .add(Rot90Op(-imageRotationDegrees / 90))
-            .add(NormalizeOp(0f, 1f))
+            .add(NormalizeOp(0f, 127.5f))
             .build()
     }
     private val nnApiDelegate by lazy  {
@@ -126,25 +126,31 @@ class MainActivity : AppCompatActivity() {
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .build()
 
-        imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), ImageAnalysis.Analyzer { imageProxy ->
+        imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this)) { imageProxy ->
             if (!::bitmapBuffer.isInitialized) {
                 // The image rotation and RGB image buffer are initialized only once
                 // the analyzer has started running
                 imageRotationDegrees = imageProxy.imageInfo.rotationDegrees
                 bitmapBuffer = Bitmap.createBitmap(
-                    imageProxy.width, imageProxy.height, Bitmap.Config.ARGB_8888)
+                    imageProxy.width, imageProxy.height, Bitmap.Config.ARGB_8888
+                )
             }
-            predict(Bitmap.createScaledBitmap(imageProxy.toBitmap(), inputSize, inputSize, true))
-            // after done, release the ImageProxy object
+            bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer)
             imageProxy.close()
+            var tensorImageBuffer = TensorImage(DataType.UINT8)
+            tensorImageBuffer.apply { load(bitmapBuffer) }
+            displayDetection(detector.detect(tfImageProcessor.process(tensorImageBuffer))[0])
+
+            // after done, release the ImageProxy object
+
 
             computeFPS(System.currentTimeMillis())
-        })
+        }
         var camera = cameraProvider.bindToLifecycle(this as LifecycleOwner, cameraSelector, preview, imageAnalysis)
     }
     private fun predict(bitmap: Bitmap) {
 // Creates inputs for reference.
-        val image = TensorImage(DataType.FLOAT32)
+        val image = TensorImage(DataType.UINT8)
         image.load(bitmap)
 // Runs model inference and gets result.
         displayDetection(detector.detect(image).maxByOrNull { it.score })
