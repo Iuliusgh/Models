@@ -29,13 +29,13 @@ import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.InterpreterApi.Options.TfLiteRuntime
 import org.tensorflow.lite.nnapi.NnApiDelegate
 import org.tensorflow.lite.support.common.FileUtil
+import org.tensorflow.lite.support.common.ops.CastOp
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
-import kotlin.math.min
 
 class MainActivity : AppCompatActivity() {
     private lateinit var fpsView: TextView
@@ -57,7 +57,8 @@ class MainActivity : AppCompatActivity() {
             .add(ResizeOp(
                 tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
             .add(Rot90Op(-imageRotationDegrees / 90))
-            .add(NormalizeOp(0f, 127.5f))
+            .add(NormalizeOp(0f, 128f))
+            .add(CastOp(DataType.UINT8))
             .build()
     }
     private val nnApiDelegate by lazy  {
@@ -92,7 +93,7 @@ class MainActivity : AppCompatActivity() {
         //start camera
         previewView = findViewById(R.id.previewView)
         cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener(Runnable {
+        cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
             bindCameraUseCase(cameraProvider)
         }, ContextCompat.getMainExecutor(this))
@@ -123,7 +124,7 @@ class MainActivity : AppCompatActivity() {
         val imageAnalysis = ImageAnalysis.Builder()
             // enable the following line if RGBA output is needed.
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_BLOCK_PRODUCER)
             .build()
 
         imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this)) { imageProxy ->
@@ -138,8 +139,9 @@ class MainActivity : AppCompatActivity() {
             bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer)
             imageProxy.close()
             var tensorImageBuffer = TensorImage(DataType.UINT8)
-            tensorImageBuffer.apply { load(bitmapBuffer) }
-            displayDetection(detector.detect(tfImageProcessor.process(tensorImageBuffer))[0])
+            tensorImageBuffer.load(bitmapBuffer)
+            var detections = detector.detect(tfImageProcessor.process(tensorImageBuffer))
+            displayDetection(detections[0])
 
             // after done, release the ImageProxy object
 
@@ -148,15 +150,7 @@ class MainActivity : AppCompatActivity() {
         }
         var camera = cameraProvider.bindToLifecycle(this as LifecycleOwner, cameraSelector, preview, imageAnalysis)
     }
-    private fun predict(bitmap: Bitmap) {
-// Creates inputs for reference.
-        val image = TensorImage(DataType.UINT8)
-        image.load(bitmap)
-// Runs model inference and gets result.
-        displayDetection(detector.detect(image).maxByOrNull { it.score })
 
-
-        }
     @SuppressLint("UseCompatLoadingForDrawables")
     private fun displayDetection(results: ObjectDetector.Detection?){
         val layout:ConstraintLayout = findViewById(R.id.resultLayout)
@@ -169,14 +163,10 @@ class MainActivity : AppCompatActivity() {
         text.layoutParams = ConstraintLayout.LayoutParams(ConstraintLayout.LayoutParams.WRAP_CONTENT,ConstraintLayout.LayoutParams.WRAP_CONTENT)
         boxPrediction.layoutParams= ConstraintLayout.LayoutParams(ConstraintLayout.LayoutParams.WRAP_CONTENT,ConstraintLayout.LayoutParams.WRAP_CONTENT)
         val constraintSet = ConstraintSet()
-        constraintSet.connect(text.id,ConstraintSet.TOP,layout.id,ConstraintSet.TOP)
         constraintSet.connect(text.id,ConstraintSet.BOTTOM,boxPrediction.id,ConstraintSet.TOP)
         constraintSet.connect(text.id,ConstraintSet.START,boxPrediction.id,ConstraintSet.START)
         constraintSet.connect(text.id,ConstraintSet.END,boxPrediction.id,ConstraintSet.END)
-        constraintSet.connect(boxPrediction.id,ConstraintSet.START,layout.id,ConstraintSet.START)
-        constraintSet.connect(boxPrediction.id,ConstraintSet.END,layout.id,ConstraintSet.END)
         constraintSet.connect(boxPrediction.id,ConstraintSet.TOP,text.id,ConstraintSet.BOTTOM)
-        constraintSet.connect(boxPrediction.id,ConstraintSet.BOTTOM,layout.id,ConstraintSet.BOTTOM)
         constraintSet.applyTo(layout)
 
         val detectionResult = (results?.label ?: "") + " : " + (results?.score ?: "")
@@ -184,17 +174,12 @@ class MainActivity : AppCompatActivity() {
         if (results != null) {
             val location = mapBoxCoords(results.location)
             (boxPrediction.layoutParams as ViewGroup.MarginLayoutParams).apply {
-                topMargin = location.top.toInt()
                 leftMargin = location.left.toInt()
-                width = min(
-                    layout.width,
-                    location.right.toInt() - location.left.toInt()
-                )
-                height = min(
-                    layout.height,
-                    location.bottom.toInt() - location.top.toInt()
-                )
+                topMargin = location.top.toInt()
+                width = (location.right - location.left).toInt()
+                height = (location.bottom - location.top).toInt()
             }
+
             text.visibility=View.VISIBLE
             boxPrediction.visibility=View.VISIBLE
             layout.addView(text)
@@ -209,23 +194,23 @@ class MainActivity : AppCompatActivity() {
             box.right * previewView.width,
             box.bottom * previewView.height
         )
-        val margin = 0.1f
-        val ratio = 4f/3f
+        //val margin = 0.1f
+        val ratio = previewView.width.toFloat() / previewView.height.toFloat()
         val midX = (boxLocation.left + boxLocation.right)/2f
         val midY = (boxLocation.top + boxLocation.bottom)/2f
-        return if (previewView.width < previewView.height){
+        return if (previewView.width > previewView.height){
             RectF(
-                midX - (1f + margin) * ratio * boxLocation.width() / 2f,
-                midY - (1f - margin) * boxLocation.height() / 2f,
-                midX + (1f + margin) * ratio * boxLocation.width() / 2f,
-                midY + (1f - margin) * boxLocation.height() / 2f
+                midX -  ratio * boxLocation.width() / 2f,
+                midY -  boxLocation.height() / 2f,
+                midX +  ratio * boxLocation.width() / 2f,
+                midY +  boxLocation.height() / 2f
             )
         } else {
             RectF(
-                midX - (1f - margin) * boxLocation.width() / 2f,
-                midY - (1f + margin) * ratio * boxLocation.height() / 2f,
-                midX + (1f - margin) * boxLocation.width() / 2f,
-                midY + (1f + margin) * ratio * boxLocation.height() / 2f
+                midX -  boxLocation.width() / 2f,
+                midY -  ratio * boxLocation.height() / 2f,
+                midX +  boxLocation.width() / 2f,
+                midY +  ratio * boxLocation.height() / 2f
             )
         }
 
