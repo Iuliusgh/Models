@@ -36,18 +36,22 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
+import org.tensorflow.lite.task.vision.detector.Detection
+
 
 class MainActivity : AppCompatActivity() {
     private lateinit var fpsView: TextView
     private lateinit var linearLayout: LinearLayout
     private lateinit var boxPrediction: View
+    private lateinit var layout:ConstraintLayout
+    private lateinit var parentLayout:ConstraintLayout
     private var tik = System.currentTimeMillis()
     private val inputSize:Int=160
     private lateinit var bitmapBuffer: Bitmap
     private var imageRotationDegrees: Int = 0
     private lateinit var previewView : PreviewView
     private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
-    private val modelPath = "yolov8n_full_integer_quant.tflite"
+    private val modelPath = "yolov8n_int8.tflite"
     private val labelPath = "yolov8n_int8_labels.txt"
 
     private val tfImageProcessor by lazy {
@@ -58,7 +62,7 @@ class MainActivity : AppCompatActivity() {
                 tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
             .add(Rot90Op(-imageRotationDegrees / 90))
             .add(NormalizeOp(0f, 128f))
-            .add(CastOp(DataType.UINT8))
+            .add(CastOp(DataType.FLOAT32))
             .build()
     }
     private val nnApiDelegate by lazy  {
@@ -84,6 +88,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.camera_fragment)
         fpsView = findViewById(R.id.fpsView)
+        parentLayout = findViewById(R.id.constraintLayout)
         // Start a timer or use a frame callback to update FPS
         TfLite.initialize(this)
         //get camera permissions
@@ -138,7 +143,7 @@ class MainActivity : AppCompatActivity() {
             }
             bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer)
             imageProxy.close()
-            var tensorImageBuffer = TensorImage(DataType.UINT8)
+            var tensorImageBuffer = TensorImage(DataType.FLOAT32)
             tensorImageBuffer.load(bitmapBuffer)
             var detections = detector.detect(tfImageProcessor.process(tensorImageBuffer))
             displayDetection(detections[0])
@@ -153,7 +158,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("UseCompatLoadingForDrawables")
     private fun displayDetection(results: ObjectDetector.Detection?){
-        val layout:ConstraintLayout = findViewById(R.id.resultLayout)
+        layout=findViewById(R.id.resultLayout)
         layout.removeAllViews()
         val text = TextView(this)
         text.id = View.generateViewId()
@@ -163,11 +168,6 @@ class MainActivity : AppCompatActivity() {
         text.layoutParams = ConstraintLayout.LayoutParams(ConstraintLayout.LayoutParams.WRAP_CONTENT,ConstraintLayout.LayoutParams.WRAP_CONTENT)
         boxPrediction.layoutParams= ConstraintLayout.LayoutParams(ConstraintLayout.LayoutParams.WRAP_CONTENT,ConstraintLayout.LayoutParams.WRAP_CONTENT)
         val constraintSet = ConstraintSet()
-        constraintSet.connect(text.id,ConstraintSet.BOTTOM,boxPrediction.id,ConstraintSet.TOP)
-        constraintSet.connect(text.id,ConstraintSet.START,boxPrediction.id,ConstraintSet.START)
-        constraintSet.connect(text.id,ConstraintSet.END,boxPrediction.id,ConstraintSet.END)
-        constraintSet.connect(boxPrediction.id,ConstraintSet.TOP,text.id,ConstraintSet.BOTTOM)
-        constraintSet.applyTo(layout)
 
         val detectionResult = (results?.label ?: "") + " : " + (results?.score ?: "")
         text.text=detectionResult
@@ -176,6 +176,8 @@ class MainActivity : AppCompatActivity() {
             (boxPrediction.layoutParams as ViewGroup.MarginLayoutParams).apply {
                 leftMargin = location.left.toInt()
                 topMargin = location.top.toInt()
+                rightMargin = location.right.toInt()
+                bottomMargin = location.bottom.toInt()
                 width = (location.right - location.left).toInt()
                 height = (location.bottom - location.top).toInt()
             }
@@ -184,6 +186,15 @@ class MainActivity : AppCompatActivity() {
             boxPrediction.visibility=View.VISIBLE
             layout.addView(text)
             layout.addView(boxPrediction)
+
+            constraintSet.clone(layout)
+            constraintSet.connect(text.id, ConstraintSet.BOTTOM,boxPrediction.id, ConstraintSet.TOP,10)
+            constraintSet.connect(text.id, ConstraintSet.START,boxPrediction.id, ConstraintSet.START)
+            constraintSet.connect(text.id, ConstraintSet.END,boxPrediction.id, ConstraintSet.END)
+            constraintSet.connect(boxPrediction.id, ConstraintSet.TOP,text.id, ConstraintSet.BOTTOM)
+
+            constraintSet.applyTo(layout)
+            layout.invalidate()
         }
 
     }
@@ -194,23 +205,23 @@ class MainActivity : AppCompatActivity() {
             box.right * previewView.width,
             box.bottom * previewView.height
         )
-        //val margin = 0.1f
+        val margin = 0.1f
         val ratio = previewView.width.toFloat() / previewView.height.toFloat()
         val midX = (boxLocation.left + boxLocation.right)/2f
         val midY = (boxLocation.top + boxLocation.bottom)/2f
-        return if (previewView.width > previewView.height){
+        return if (previewView.width < previewView.height){
             RectF(
-                midX -  ratio * boxLocation.width() / 2f,
-                midY -  boxLocation.height() / 2f,
-                midX +  ratio * boxLocation.width() / 2f,
-                midY +  boxLocation.height() / 2f
+                midX - (1f + margin) * ratio * boxLocation.width() / 2f,
+                midY - (1f - margin) * boxLocation.height() / 2f,
+                midX + (1f + margin) * ratio * boxLocation.width() / 2f,
+                midY + (1f - margin) * boxLocation.height() / 2f
             )
         } else {
             RectF(
-                midX -  boxLocation.width() / 2f,
-                midY -  ratio * boxLocation.height() / 2f,
-                midX +  boxLocation.width() / 2f,
-                midY +  ratio * boxLocation.height() / 2f
+                midX - (1f - margin) * boxLocation.width() / 2f,
+                midY - (1f + margin) * ratio * boxLocation.height() / 2f,
+                midX + (1f - margin) * boxLocation.width() / 2f,
+                midY + (1f + margin) * ratio * boxLocation.height() / 2f
             )
         }
 
