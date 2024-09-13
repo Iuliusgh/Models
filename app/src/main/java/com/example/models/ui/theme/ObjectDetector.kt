@@ -42,10 +42,8 @@ class ObjectDetector(private val tflite: Interpreter, private val labels: List<S
     }
     fun detect(image: TensorImage): List<Detection> {
         tflite.run(image.buffer, outputBuffer.buffer)
-        floatBuffer= outputBuffer.floatArray
-        for(i in floatBuffer.indices){
-            floatBuffer[i] /= 255f
-        }
+        floatBuffer= outputBuffer.floatArray.map { it/255f }.toFloatArray()
+        //val aux =outputBuffer.buffer
         return detections
     }
     companion object {

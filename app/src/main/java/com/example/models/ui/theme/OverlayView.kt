@@ -28,11 +28,10 @@ import androidx.core.content.ContextCompat
 import com.example.models.R
 import org.tensorflow.lite.task.vision.detector.Detection
 import java.util.LinkedList
-import kotlin.math.max
 
 class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs) {
 
-    private var results: List<Detection> = LinkedList<Detection>()
+    private var results: List<Detection> = LinkedList()
     private var boxPaint = Paint()
     private var textBackgroundPaint = Paint()
     private var textPaint = Paint()
@@ -73,10 +72,10 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
         for (result in results) {
             val boundingBox = result.boundingBox
 
-            val top = boundingBox.top * scaleFactor
-            val bottom = boundingBox.bottom * scaleFactor
-            val left = boundingBox.left * scaleFactor
-            val right = boundingBox.right * scaleFactor
+            val top = boundingBox.top * height * scaleFactor
+            val bottom = boundingBox.bottom * height * scaleFactor
+            val left = boundingBox.left * width
+            val right = boundingBox.right * width
 
             // Draw bounding box around detected objects
             val drawableRect = RectF(left, top, right, bottom)
@@ -105,15 +104,13 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
     }
 
     fun setResults(
-        detectionResults: MutableList<Detection>,
-        imageHeight: Int,
-        imageWidth: Int,
+        detectionResults: List<Detection>
     ) {
         results = detectionResults
-
         // PreviewView is in FILL_START mode. So we need to scale up the bounding box to match with
         // the size that the captured images will be displayed.
-        scaleFactor = max(width * 1f / imageWidth, height * 1f / imageHeight)
+        //scaleFactor = max(width * 1f / 160f, height * 1f / 160f)
+        scaleFactor = (width/height).toFloat()
     }
 
     companion object {
