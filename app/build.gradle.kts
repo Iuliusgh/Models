@@ -76,6 +76,9 @@ dependencies {
     implementation(libs.tensorflow.lite.support)
     implementation(libs.tensorflow.lite.metadata)
     implementation(libs.androidx.coordinatorlayout)
+    implementation(project(":opencv"))
+    implementation(libs.tensorflow)
+    implementation(libs.opencv)
 
 
 

@@ -1,5 +1,6 @@
 package com.example.models
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -17,7 +18,6 @@ import com.google.common.util.concurrent.ListenableFuture
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.task.vision.detector.Detection
-import android.Manifest
 
 
 class CameraActivity: AppCompatActivity() {
@@ -78,7 +78,7 @@ class CameraActivity: AppCompatActivity() {
             }
             bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer)
             imageProxy.close()
-            var tensorImageBuffer = TensorImage(DataType.FLOAT32)
+            val tensorImageBuffer = TensorImage(DataType.FLOAT32)
             tensorImageBuffer.load(bitmapBuffer)
             //var detections = detector.detect(tfImageProcessor.process(tensorImageBuffer))
             //activityCameraBinding.overlayView.setResults(listOf(detections.maxBy { it.categories[0].score }))

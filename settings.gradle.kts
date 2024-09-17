@@ -21,4 +21,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Models"
 include(":app")
+include(":opencv")
  

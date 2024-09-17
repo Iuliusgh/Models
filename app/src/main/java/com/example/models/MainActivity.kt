@@ -1,11 +1,19 @@
 package com.example.models
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.util.Size
 import androidx.appcompat.app.AppCompatActivity
 import com.example.models.databinding.ActivityMainBinding
 import com.example.models.ui.theme.ObjectDetector
 import com.google.android.gms.tflite.java.TfLite
+import org.opencv.android.OpenCVLoader
+import org.opencv.android.Utils
+import org.opencv.core.Core
+import org.opencv.core.Mat
+import org.opencv.core.Scalar
+import org.opencv.imgproc.Imgproc
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.InterpreterApi.Options.TfLiteRuntime
@@ -14,16 +22,17 @@ import org.tensorflow.lite.support.common.FileUtil
 import org.tensorflow.lite.support.common.ops.CastOp
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
+import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
-import org.tensorflow.lite.support.image.ops.Rot90Op
-
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
+import kotlin.math.round
 
 class MainActivity : AppCompatActivity() {
     private lateinit var activityMainBinding: ActivityMainBinding
 
     private val inputSize:Int=640
-
+    private val confidence = 0.001f
     private val modelPath = "test_float32.tflite"
     private val labelPath = "coco80_labels.txt"
     private val coco80to91: Map<Int, Int> = mapOf(
@@ -109,14 +118,12 @@ class MainActivity : AppCompatActivity() {
         79 to 90   // toothbrush
     )
 
-
     private val tfImageProcessor by lazy {
         val cropSize = minOf(inputSize, inputSize)
         ImageProcessor.Builder()
             .add(ResizeWithCropOrPadOp(cropSize, cropSize))
             .add(ResizeOp(
                 tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.BILINEAR))
-            .add(Rot90Op(-0 / 90))
             .add(NormalizeOp(0f, 255f))
             .add(CastOp(DataType.FLOAT32))
             .build()
@@ -141,12 +148,38 @@ class MainActivity : AppCompatActivity() {
         Size(inputShape[2], inputShape[1]) // Order of axis is: {1, height, width, 3}
     }
     override fun onCreate(savedInstanceState: Bundle?) {
+        val path = "dataset/coco/val2017"
+        val imgList = assets.list(path)//File(filesDir, "/dataset/coco/val2017/")
+
         super.onCreate(savedInstanceState)
+        OpenCVLoader.initLocal()
         activityMainBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(activityMainBinding.root)
 
         // Start a timer or use a frame callback to update FPS
         TfLite.initialize(this)
+        val outputBuffer = TensorBuffer.createFixedSize(tflite.getOutputTensor(0).shape(),tflite.getOutputTensor(0).dataType())
+
+        if (imgList != null) {
+            for (file in imgList){
+                val stream = assets.open(path+"/"+file)
+                val bitmap = BitmapFactory.decodeStream(stream)
+                val mat = Mat()
+                Utils.bitmapToMat(bitmap, mat)
+                val preprocessedImg = preprocessImage(mat)
+                val tensorImage = TensorImage(DataType.FLOAT32)
+                val noAlpha = Mat()
+                Imgproc.cvtColor(preprocessedImg,noAlpha,Imgproc.COLOR_RGBA2RGB)
+                val bmp = Bitmap.createBitmap(inputSize,inputSize,Bitmap.Config.ARGB_8888)
+                Utils.matToBitmap(preprocessedImg,bmp)
+                tensorImage.load(bmp)
+                val inputImage = tfImageProcessor.process(tensorImage)
+                tflite.run(inputImage.buffer,outputBuffer.buffer)
+                nms(outputBuffer)
+                val a =1
+            }
+        }
+
         activityMainBinding.textView.text=""
     }
 
@@ -154,9 +187,82 @@ class MainActivity : AppCompatActivity() {
         tflite.close()
         nnApiDelegate.close()
         super.onDestroy()
-
     }
 
+    private fun preprocessImage(mat: Mat):Mat{
+        val padFillValue = Scalar(114.0, 114.0, 114.0)
+        val inputSize = 640
+        val imgShape = mat.size()
+        val r = minOf(inputSize/imgShape.width,inputSize/imgShape.height)
+        val ratio = Pair(r,r)
+        val newShape = org.opencv.core.Size(round(imgShape.width*r),round(imgShape.height*r))
+        val wpad = (inputSize - newShape.width) / 2
+        val hpad = (inputSize - newShape.height) / 2
+        val top = round(hpad-0.1).toInt()
+        val bottom = round(hpad+0.1).toInt()
+        val left = round(wpad-0.1).toInt()
+        val right = round(wpad+0.1).toInt()
+        val paddedImg = Mat()
+        if (!imgShape.equals(newShape)) {
+            val resizedImg = Mat()
+            Imgproc.resize(mat, resizedImg, newShape, 0.0, 0.0, Imgproc.INTER_LINEAR)
+            Core.copyMakeBorder(resizedImg,paddedImg,top,bottom,left,right,Core.BORDER_CONSTANT,padFillValue)
+        }
+        else {
+            Core.copyMakeBorder(mat,paddedImg, top, bottom, left, right, Core.BORDER_CONSTANT, padFillValue)
+        }
+        return paddedImg
+    }
+    private fun nms(inferenceOutput : TensorBuffer){
+        val floatArray = inferenceOutput.floatArray
+        val reshapedInput = Array(inferenceOutput.shape[0]){ //1
+            Array(inferenceOutput.shape[1]){//84
+                FloatArray(inferenceOutput.shape[2])//8400
+            }
+        }
+        val shuffledArray = Array(inferenceOutput.shape[0]){ //1
+            Array(inferenceOutput.shape[2]){//8400
+                FloatArray(inferenceOutput.shape[1])//84
+            }
+        }
+        for (i in floatArray.indices){
+            reshapedInput[0][i/inferenceOutput.shape[2]%inferenceOutput.shape[1]][i%inferenceOutput.shape[2]] = floatArray[i]
+        }
+        val numClasses = inferenceOutput.shape[1] - 4
+        val numMasks = inferenceOutput.shape[1] - 4 - numClasses
+
+        for (i in 0 until inferenceOutput.shape[1]*inferenceOutput.shape[2]){//[1][84][8400] -> [1][8400][84]
+            shuffledArray[0][i%inferenceOutput.shape[2]][i/inferenceOutput.shape[2]] = reshapedInput[0][i/inferenceOutput.shape[2]][i%inferenceOutput.shape[2]]
+        }
+        val candidates = shuffledArray[0].map{ row->
+            (row.drop(4).maxOrNull() ?: 0f) > confidence
+        }
+        outputCoordsToCorners(shuffledArray[0])
+        var output = Array(300){
+            FloatArray(6)//box[4]+class[1]+score[1]
+        }
+        val x : ArrayList<FloatArray> = ArrayList()
+        for(index in shuffledArray[0].indices){
+            if(candidates[index]){x.add(shuffledArray[0][index])}
+        }
+        if(x.size>0){
+            //TODO split y esas cosas
+        }
+
+        val a =1
+    }
+    private fun outputCoordsToCorners(outputCoords: Array<FloatArray>){
+        for (i in outputCoords.indices) {
+            val centerX = outputCoords[i][0]
+            val centerY = outputCoords[i][1]
+            val w = outputCoords[i][2]
+            val h = outputCoords[i][3]
+            outputCoords[i][0] = centerX - w
+            outputCoords[i][1] = centerY - h
+            outputCoords[i][2] = centerX + w
+            outputCoords[i][3] = centerY + h
+        }
+    }
 }
 
 
