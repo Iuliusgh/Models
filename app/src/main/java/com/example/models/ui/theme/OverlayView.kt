@@ -16,19 +16,7 @@
 
 package com.example.models.ui.theme
 
-import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Rect
-import android.graphics.RectF
-import android.util.AttributeSet
-import android.view.View
-import androidx.core.content.ContextCompat
-import com.example.models.R
-import org.tensorflow.lite.task.vision.detector.Detection
-import java.util.LinkedList
-
+/*
 class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs) {
 
     private var results: List<Detection> = LinkedList()
@@ -116,4 +104,4 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
     companion object {
         private const val BOUNDING_RECT_TEXT_PADDING = 8
     }
-}
+}*/

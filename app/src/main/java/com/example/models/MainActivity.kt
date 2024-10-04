@@ -1,11 +1,24 @@
 package com.example.models
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
-import android.util.Size
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.example.models.databinding.ActivityMainBinding
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.Core
@@ -14,15 +27,17 @@ import org.opencv.core.Scalar
 import org.opencv.imgproc.Imgproc
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.nnapi.NnApiDelegate
+import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.gpu.GpuDelegateFactory
 import org.tensorflow.lite.support.common.FileUtil.loadMappedFile
 import org.tensorflow.lite.support.common.ops.CastOp
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
-import org.tensorflow.lite.support.image.ops.ResizeOp
-import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
+import java.io.File
+import java.io.InputStream
+import java.lang.String.format
 import kotlin.math.round
 
 
@@ -116,96 +131,98 @@ class MainActivity : AppCompatActivity() {
         78 to 89,  // hair drier
         79 to 90   // toothbrush
     )
+    private val jsonList : MutableList<JsonArray> = mutableListOf()
+
     //NMS Candidate object
-    data class Candidate(val bbox: FloatArray, val score: Float, val clas: Int)
+    data class Candidate(val bbox: FloatArray, var score: Float, var clas: Int)
+    data class PreprocessResult(
+        val image: Mat,
+        val ratio: Pair<Float, Float>,
+        val pad: Pair<Int, Int>,
+        val ogImgShape: org.opencv.core.Size
+    )
+
 
     private val tfImageProcessor by lazy {
-        val cropSize = minOf(inputSize, inputSize)
-        ImageProcessor.Builder()
-            .add(ResizeWithCropOrPadOp(cropSize, cropSize))
-            .add(
-                ResizeOp(
-                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.BILINEAR
-                )
-            )
-            .add(NormalizeOp(0f, 255f))
-            .add(CastOp(DataType.FLOAT32))
-            .build()
+        //val cropSize = minOf(inputSize, inputSize)
+        ImageProcessor.Builder().add(NormalizeOp(0f, 255f)).add(CastOp(DataType.FLOAT32)).build()
+        //.add(ResizeWithCropOrPadOp(cropSize, cropSize)).add(ResizeOp(tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.BILINEAR))
     }
-    private val nnApiDelegate by lazy {
-        NnApiDelegate()
-    }
-
     private val tflite by lazy {
         Interpreter(
-            loadMappedFile(this, modelPath),
-            Interpreter.Options().addDelegate(nnApiDelegate)
+            loadMappedFile(this, modelPath), Interpreter.Options().apply {
+                this.addDelegate(GpuDelegate(GpuDelegateFactory.Options()))
+            }
         )
-        //Interpreter.Options().apply { addDelegate(FlexDelegate()) })
     }
 
-    /*private val detector by lazy {
-        ObjectDetector(
-            tflite,
-            FileUtil.loadLabels(this, labelPath)
-        )
-    }*/
-    private val tfInputSize by lazy {
+    /*private val tfInputSize by lazy {
         val inputIndex = 0
         val inputShape = tflite.getInputTensor(inputIndex).shape()
         Size(inputShape[2], inputShape[1]) // Order of axis is: {1, height, width, 3}
-    }
+    }*/
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val path = "dataset/coco/val2017"
-        val imgList = assets.list(path)//File(filesDir, "/dataset/coco/val2017/")
-
         super.onCreate(savedInstanceState)
         OpenCVLoader.initLocal()
         activityMainBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(activityMainBinding.root)
-
-        // Start a timer or use a frame callback to update FPS
-
-        val outputBuffer = TensorBuffer.createFixedSize(
-            tflite.getOutputTensor(0).shape(),
-            tflite.getOutputTensor(0).dataType()
-        )
-
-        if (imgList != null) {
-            for (file in imgList) {
-                val stream = assets.open(path + "/" + file)
-                val bitmap = BitmapFactory.decodeStream(stream)
-                val mat = Mat()
-                Utils.bitmapToMat(bitmap, mat)
-                val preprocessedImg = preprocessImage(mat)
-                val tensorImage = TensorImage(DataType.FLOAT32)
-                val noAlpha = Mat()
-                Imgproc.cvtColor(preprocessedImg, noAlpha, Imgproc.COLOR_RGBA2RGB)
-                val bmp = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-                Utils.matToBitmap(preprocessedImg, bmp)
-                tensorImage.load(bmp)
-                val inputImage = tfImageProcessor.process(tensorImage)
-                tflite.run(inputImage.buffer, outputBuffer.buffer)
-                postprocess(outputBuffer)
+        activityMainBinding.button.setOnClickListener {
+            CoroutineScope(Dispatchers.Default).launch{
+                validate()
             }
         }
-
-        activityMainBinding.textView.text = ""
     }
 
+    @SuppressLint("DefaultLocale")
+    private suspend fun validate(){
+        val path = "dataset/coco/val2017"
+        val imgList = assets.list(path)//File(filesDir, "/dataset/coco/val2017/")
+        val outputBuffer = TensorBuffer.createFixedSize(
+            tflite.getOutputTensor(0).shape(), tflite.getOutputTensor(0).dataType()
+        )
+        val mat = Mat()
+        val tensorImage = TensorImage(DataType.FLOAT32)
+        val bmp = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+        var bitmap : Bitmap
+        lateinit var inputImage :TensorImage
+        var preprocessResult : PreprocessResult
+        var stream : InputStream
+        var nmsResult : Array<Candidate>
+        val output : MutableList<Candidate> = MutableList(300){Candidate(FloatArray(4),0f,0)}
+        if (imgList != null) {
+            for ((i, file) in imgList.withIndex()) {
+                stream = assets.open(path + "/" + file)
+                bitmap = BitmapFactory.decodeStream(stream)
+                Utils.bitmapToMat(bitmap, mat)
+                preprocessResult = preprocessImage(mat)
+                Utils.matToBitmap(preprocessResult.image, bmp)
+                tensorImage.load(bmp)
+                inputImage = tfImageProcessor.process(tensorImage)
+                stream.close()
+                tflite.run(inputImage.buffer, outputBuffer.buffer)
+                nmsResult = nms(outputBuffer)
+                postprocess(nmsResult, preprocessResult.ratio, preprocessResult.pad, preprocessResult.ogImgShape,output)
+                jsonList.add(outputToJSON(output, file))
+                withContext(Dispatchers.Main) {
+                    activityMainBinding.textView.text = "Progress: " + format("%.2f", i / imgList.size.toFloat() * 100)
+                }
+            }
+            val jsonOutput = buildJsonArray { for(j in jsonList){ add(j) } }
+            File(filesDir, "output.json").writeText(Json.encodeToString(JsonArray.serializer(),jsonOutput))
+        }
+    }
     public override fun onDestroy() {
         tflite.close()
-        nnApiDelegate.close()
         super.onDestroy()
     }
 
-    private fun preprocessImage(mat: Mat): Mat {
+    private fun preprocessImage(mat: Mat): PreprocessResult {
         val padFillValue = Scalar(114.0, 114.0, 114.0)
         val inputSize = 640
         val imgShape = mat.size()
         val r = minOf(inputSize / imgShape.width, inputSize / imgShape.height)
-        val ratio = Pair(r, r)
+        val ratio = Pair(r.toFloat(), r.toFloat())
         val newShape = org.opencv.core.Size(round(imgShape.width * r), round(imgShape.height * r))
         val wpad = (inputSize - newShape.width) / 2
         val hpad = (inputSize - newShape.height) / 2
@@ -218,73 +235,77 @@ class MainActivity : AppCompatActivity() {
             val resizedImg = Mat()
             Imgproc.resize(mat, resizedImg, newShape, 0.0, 0.0, Imgproc.INTER_LINEAR)
             Core.copyMakeBorder(
-                resizedImg,
-                paddedImg,
-                top,
-                bottom,
-                left,
-                right,
-                Core.BORDER_CONSTANT,
-                padFillValue
+                resizedImg, paddedImg, top, bottom, left, right, Core.BORDER_CONSTANT, padFillValue
             )
         } else {
             Core.copyMakeBorder(
-                mat,
-                paddedImg,
-                top,
-                bottom,
-                left,
-                right,
-                Core.BORDER_CONSTANT,
-                padFillValue
+                mat, paddedImg, top, bottom, left, right, Core.BORDER_CONSTANT, padFillValue
             )
         }
-        return paddedImg
+        return PreprocessResult(paddedImg, ratio, Pair(top, left), imgShape)
     }
 
-    private fun postprocess(
-        inferenceOutput: TensorBuffer,
-        maxNMS: Int = 30000,
-        maxWH: Int = 7860,
-        maxDet: Int = 300
-    ) {
-
+    private suspend fun nms(
+        inferenceOutput: TensorBuffer, maxNMS: Int = 30000, maxWH: Int = 7860, maxDet: Int = 300
+    ): Array<Candidate> {
+        //Variable declaration
         val floatArray = inferenceOutput.floatArray
-        val reshapedInput = Array(inferenceOutput.shape[0]) { //1
-            Array(inferenceOutput.shape[1]) {//84
-                FloatArray(inferenceOutput.shape[2])//8400
+        val outputShape = inferenceOutput.shape[1]//84-> classes + 4 bbox coords
+        val numOutputs = inferenceOutput.shape[2]//8400 outputs
+        val reshapedInput =  Array(1){Array(numOutputs) {FloatArray(outputShape)}} //1,8400,84
+        val output: Array<Candidate> = Array(maxDet) { Candidate(FloatArray(4), 0f, 0)}
+        //1D array to [1][84][8400]
+        val numThreads = Runtime.getRuntime().availableProcessors()
+        var chunkSize = inferenceOutput.flatSize / numThreads
+        val jobs = mutableListOf<Job>()
+        for(i in 0 until numThreads){
+            val start = chunkSize*i
+            val end = chunkSize*(i+1)
+            val job= CoroutineScope(Dispatchers.Default).launch{
+                for(index in start until end){
+                    val row = ( index / numOutputs ) % outputShape
+                    val col = index % numOutputs
+                    reshapedInput[0][col][row] = floatArray[index]
+                }
             }
+            jobs.add(job)
         }
-        val shuffledArray = Array(inferenceOutput.shape[0]) { //1
-            Array(inferenceOutput.shape[2]) {//8400
-                FloatArray(inferenceOutput.shape[1])//84
+        for(job in jobs){
+            job.join()
+        }
+        jobs.clear()
+        //# classes output shape - 4 bbox values
+        val numClasses = outputShape - 4
+        //Unused
+        //val numMasks = inferenceOutput.shape[1] - 4 - numClasses
+        Log.i("NMS","Starting reshape")
+        chunkSize = numOutputs/numThreads
+        val candidates = Array(numOutputs){false}
+        for(i in 0 until numThreads){
+            val start = chunkSize * i
+            val end = chunkSize * (i+1)
+            val job = CoroutineScope(Dispatchers.Default).launch{
+                for(index in start until end){
+                    candidates[index] = reshapedInput[0][index].drop(4).max()>confidence
+                    xywh2xyxy(reshapedInput[0][index])
+                }
             }
+            jobs.add(job)
         }
-        for (i in floatArray.indices) {
-            reshapedInput[0][i / inferenceOutput.shape[2] % inferenceOutput.shape[1]][i % inferenceOutput.shape[2]] =
-                floatArray[i]
+        for(job in jobs){
+            job.join()
         }
-        val numClasses = inferenceOutput.shape[1] - 4
-        val numMasks = inferenceOutput.shape[1] - 4 - numClasses
+        jobs.clear()
+        Log.i("NMS","Finished reshape")
 
-        for (i in 0 until inferenceOutput.shape[1] * inferenceOutput.shape[2]) {//[1][84][8400] -> [1][8400][84]
-            shuffledArray[0][i % inferenceOutput.shape[2]][i / inferenceOutput.shape[2]] =
-                reshapedInput[0][i / inferenceOutput.shape[2]][i % inferenceOutput.shape[2]]
-        }
-        val candidates = shuffledArray[0].map { row ->
-            (row.drop(4).max()) > confidence
-        }
-        //xywh2xyxy(shuffledArray[0])
-        val x :List<FloatArray> =  candidates.mapIndexedNotNull { index, b ->
-            if (b) shuffledArray[0][index] else null
-        }
-        if (x.size > 0) {
-            val box: ArrayList<FloatArray> = ArrayList()
-            val clas: ArrayList<FloatArray> = ArrayList()
-            val preds: ArrayList<FloatArray> = ArrayList()
+        val x: List<FloatArray> = candidates.mapIndexedNotNull { index, b -> if (b) reshapedInput[0][index] else null }
+        if (x.isNotEmpty()) {
+            val box: Array<FloatArray> = Array(x.size){FloatArray(4)}
+            val clas: Array<FloatArray> = Array(x.size){FloatArray(numClasses)}
+            val preds: MutableList<FloatArray> = mutableListOf()
             for (i in x.indices) {
-                box.add(x[i].copyOfRange(0, 4))
-                clas.add(x[i].copyOfRange(4, 4 + numClasses))
+                box[i]=x[i].copyOfRange(0, 4)
+                clas[i]=x[i].copyOfRange(4, 4 + numClasses)
             }
             val i: ArrayList<Int> = ArrayList()
             val j: ArrayList<Int> = ArrayList()
@@ -305,71 +326,60 @@ class MainActivity : AppCompatActivity() {
                     preds.sortByDescending { it[4] }
                     preds.subList(maxNMS, numDetections).clear()
                 }
-                val nms_cand = ArrayList<Candidate>()
-
-                val offset = FloatArray(numDetections)
+                val nmsCand = Array<Candidate>(preds.size){Candidate(FloatArray(5),0f,0)}
                 for (index in preds.indices) {
-                    offset[index] = preds[index][5] * maxWH
-                    nms_cand.add(
-                        Candidate(
-                            preds[index].copyOfRange(0, 4).map { it + offset[index] }.toFloatArray(),
+                    nmsCand[index]=Candidate(
+                            preds[index].copyOfRange(0, 4),
                             preds[index][4],
                             preds[index][5].toInt()
                         )
-                    )
                 }
-
-
-                val keep = nms(nms_cand)
-                val result = keep.map { nms_cand[it] }
-                val b = 1
+                val keep = nonMaxSuppression(nmsCand)
+                for (index in 0 until keep.size.coerceAtMost(maxDet)) {
+                output[index]=nmsCand[keep[index]]
+                }
             }
-
         }
-
-        val a = 1
+        return  output
     }
 
-    private fun xywh2xyxy(outputCoords: Array<FloatArray>) {
-        for (i in outputCoords.indices) {
-            val centerX = outputCoords[i][0]
-            val centerY = outputCoords[i][1]
-            val w = outputCoords[i][2]
-            val h = outputCoords[i][3]
-            outputCoords[i][0] = centerX - w
-            outputCoords[i][1] = centerY - h
-            outputCoords[i][2] = centerX + w
-            outputCoords[i][3] = centerY + h
-        }
+    private fun xywh2xyxy(outputCoords: FloatArray) {
+        val centerX = outputCoords[0]
+        val centerY = outputCoords[1]
+        val hw = outputCoords[2]*0.5f
+        val hh = outputCoords[3]*0.5f
+        outputCoords[0] -= hw
+        outputCoords[1] -= hh
+        outputCoords[2] = centerX + hw
+        outputCoords[3] = centerY + hh
     }
 
-    private fun nms(
-      candidates: ArrayList<Candidate>
+    private fun nonMaxSuppression(
+        candidates: Array<Candidate>
     ): List<Int> {
 
         candidates.sortByDescending { it.score }
-        val areas = candidates.map { it.bbox[2] * it.bbox[3] }
+        val areas = candidates.map { (it.bbox[2] - it.bbox[0]) * (it.bbox[3] - it.bbox[1]) }
         val keep = ArrayList<Int>()
         for (i in candidates.indices) {
             var flag = true
-            for (j in keep.indices) {
-                val x = maxOf(
-                    candidates[i].bbox[0] - candidates[i].bbox[2]/2,
-                    candidates[keep[j]].bbox[0] - candidates[keep[j]].bbox[2]/2
-                )
-                val y = maxOf(
-                    candidates[i].bbox[1] - candidates[i].bbox[3]/2,
-                    candidates[keep[j]].bbox[1] - candidates[keep[j]].bbox[3]/2
-                )
-                var width = minOf(x + candidates[i].bbox[2], x + candidates[keep[j]].bbox[2]) - x
-                var height = minOf(y + candidates[i].bbox[3], y + candidates[keep[j]].bbox[3]) - y
+            var j = 0
+            while (j in keep.indices && flag) {
+                val topLeftX = maxOf(candidates[i].bbox[0], candidates[keep[j]].bbox[0])
+                val topLeftY = maxOf(candidates[i].bbox[1], candidates[keep[j]].bbox[1])
+                val bottomRightX = minOf(candidates[i].bbox[2], candidates[keep[j]].bbox[2])
+                val bottomRightY = minOf(candidates[i].bbox[3], candidates[keep[j]].bbox[3])
+                var width = bottomRightX - topLeftX
+                var height = bottomRightY - topLeftY
                 if (width < 0) width = 0f
                 if (height < 0) height = 0f
                 val inter = width * height
                 val union = areas[i] + areas[keep[j]] - inter
-                if ((inter / union) > iou) {
+                val iouCalc = (inter / union)
+                if (iouCalc > iou) {
                     flag = false
                 }
+                j++
             }
             if (flag) {
                 keep.add(i)
@@ -377,6 +387,49 @@ class MainActivity : AppCompatActivity() {
         }
         return keep
     }
-}
 
+    private fun postprocess(
+        inferenceOutput: Array<Candidate>,
+        ratio: Pair<Float, Float>,
+        pad: Pair<Int, Int>,
+        ogImgShape: org.opencv.core.Size,
+        output: MutableList<Candidate>
+    ) {
+        val left = pad.first.toFloat()
+        val top = pad.second.toFloat()
+        val width = ogImgShape.width.toFloat()
+        val height = ogImgShape.height.toFloat()
+        val divVal = minOf(ratio.first, ratio.second)
+        for (i in inferenceOutput.indices) {
+            output[i].bbox[0] = ((inferenceOutput[i].bbox[0] - left) / divVal).coerceIn(0f, width)
+            output[i].bbox[1] = ((inferenceOutput[i].bbox[1] - top) / divVal).coerceIn(0f, height)
+            output[i].bbox[2] = ((inferenceOutput[i].bbox[2] - left) / divVal).coerceIn(0f, width)
+            output[i].bbox[3] = ((inferenceOutput[i].bbox[3] - top) / divVal).coerceIn(0f, height)
+            output[i].score = inferenceOutput[i].score
+            output[i].clas = inferenceOutput[i].clas
+        }
+    }
+
+    @SuppressLint("DefaultLocale")
+    fun outputToJSON(output: List<Candidate>, filename: String): JsonArray {
+        val file = filename.substringBeforeLast(".")
+        val array = buildJsonArray {
+            for (o in output) {
+                val json = buildJsonObject {
+                    put("image_id", file)
+                    put("category_id", coco80to91[o.clas])
+                    putJsonArray("bbox") {
+                        for (i in o.bbox.map { format("%.3f", it) }) {
+                            add(i)
+                        }
+                    }
+                    put("score", format("%.5f", o.score))
+                }
+                add(json)
+            }
+        }
+
+        return array
+    }
+}
 

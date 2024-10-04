@@ -2,13 +2,7 @@
 
 package com.example.models.ui.theme
 
-import android.graphics.RectF
-import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.support.image.TensorImage
-import org.tensorflow.lite.support.label.Category
-import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
-import org.tensorflow.lite.task.vision.detector.Detection
-
+/*
 
 class ObjectDetector(private val tflite: Interpreter, private val labels: List<String>) {
 
@@ -50,4 +44,4 @@ class ObjectDetector(private val tflite: Interpreter, private val labels: List<S
         const val MAX_DETECTIONS = 10
         const val CONFIDENCE_THRESHOLD = 0.3f
     }
-}
+}*/

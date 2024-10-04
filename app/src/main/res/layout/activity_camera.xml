@@ -7,33 +7,29 @@
     android:id="@+id/coordinatorLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
-    tools:context=".CameraActivity">
+    android:orientation="horizontal">
 
-    <androidx.camera.view.PreviewView
+    <!--androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"/>
-    <com.example.models.ui.theme.OverlayView
-        android:id="@+id/overlayView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"/>
-    <LinearLayout
+        android:layout_height="match_parent"/-->
+
+    <!--LinearLayout
         android:id="@+id/linearLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="top|end"
         android:orientation="vertical"
         android:weightSum="2"
-        >
-        <TextView
+        -->
+        <!--TextView
             android:id="@+id/fpsView"
             android:layout_width="wrap_content"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:gravity="end|top"
-            android:text="Nan" />
+            android:text="Nan" /-->
 
-    </LinearLayout>
+    <!--/LinearLayout-->
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

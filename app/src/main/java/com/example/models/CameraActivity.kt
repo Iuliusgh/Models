@@ -1,24 +1,6 @@
 package com.example.models
 
-import android.Manifest
-import android.annotation.SuppressLint
-import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.RectF
-import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.LifecycleOwner
-import com.example.models.databinding.ActivityCameraBinding
-import com.google.common.util.concurrent.ListenableFuture
-import org.tensorflow.lite.DataType
-import org.tensorflow.lite.support.image.TensorImage
-import org.tensorflow.lite.task.vision.detector.Detection
-
+/*
 
 class CameraActivity: AppCompatActivity() {
     private lateinit var activityCameraBinding: ActivityCameraBinding
@@ -127,7 +109,4 @@ class CameraActivity: AppCompatActivity() {
             )
         }
     }
-}
-
-
-
+}*/
