@@ -6,15 +6,76 @@
     android:layout_height="match_parent">
 
     <TextView
-        android:id="@+id/textView"
+        android:id="@+id/progress"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        app:layout_constraintBottom_toBottomOf="parent"
         android:text="Info"
+        android:textColor="@color/black"
+        app:layout_constraintTop_toBottomOf="@id/button"
+        app:layout_constraintBottom_toTopOf="@id/runTime"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <TextView
+        android:id="@+id/preTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Preprocessing time (ms)"
+        app:layout_constraintBottom_toTopOf="@id/preTimeVal"
+        app:layout_constraintEnd_toStartOf="@+id/runTime"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        android:textColor="@color/black"/>
+        app:layout_constraintTop_toBottomOf="@id/progress" />
+
+    <TextView
+        android:id="@+id/runTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Model run time (ms)"
+        app:layout_constraintBottom_toTopOf="@id/runTimeVal"
+        app:layout_constraintTop_toBottomOf="@+id/progress"
+        app:layout_constraintStart_toEndOf="@id/preTime"
+        app:layout_constraintEnd_toStartOf="@id/postTime"
+        />
+
+    <TextView
+        android:id="@+id/postTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Postprocessing time (ms)"
+        app:layout_constraintBottom_toTopOf="@id/postTimeVal"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/progress"
+        app:layout_constraintStart_toEndOf="@id/runTime"/>
+    <TextView
+        android:id="@+id/preTimeVal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/runTimeVal"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/preTime" />
+
+    <TextView
+        android:id="@+id/runTimeVal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/runTime"
+        app:layout_constraintStart_toEndOf="@id/preTimeVal"
+        app:layout_constraintEnd_toStartOf="@id/postTimeVal"
+        />
+
+    <TextView
+        android:id="@+id/postTimeVal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/postTime"
+        app:layout_constraintStart_toEndOf="@id/runTimeVal"/>
 
     <Button
         android:id="@+id/button"
@@ -22,8 +83,9 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="88dp"
         android:text="Start"
-        app:layout_constraintBottom_toTopOf="@+id/textView"
+        app:layout_constraintBottom_toTopOf="@+id/progress"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
