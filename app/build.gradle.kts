@@ -18,6 +18,11 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        externalNativeBuild {
+            cmake {
+                cppFlags += ""
+            }
+        }
     }
     dataBinding{
         enable = true
@@ -51,6 +56,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
 }
 
 dependencies {
@@ -79,6 +85,7 @@ dependencies {
     implementation(libs.tensorflow.lite.gpu.delegate.plugin)
     implementation(libs.tensorflow.lite.gpu.api)
     implementation(libs.tensorflow.lite.metadata)
+    implementation(libs.tensorflow.lite)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
