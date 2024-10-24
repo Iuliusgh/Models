@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.models"
-        minSdk = 28
+        minSdk = 30
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -22,6 +22,10 @@ android {
             cmake {
                 cppFlags += ""
             }
+        }
+        ndk {
+            //noinspection ChromeOsAbiSupport
+            abiFilters += listOf("arm64-v8a")
         }
     }
     dataBinding{
@@ -56,6 +60,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    ndkVersion = "28.0.12433566 rc1"
 
 }
 
@@ -86,7 +91,7 @@ dependencies {
     implementation(libs.tensorflow.lite.gpu.api)
     implementation(libs.tensorflow.lite.metadata)
     implementation(libs.tensorflow.lite)
-
+    implementation(files("../libs/qtld-release.aar"))
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

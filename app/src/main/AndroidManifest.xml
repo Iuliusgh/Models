@@ -13,7 +13,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Models"
-        tools:targetApi="31">
+        tools:targetApi="31"
+        android:extractNativeLibs="true"
+        android:hardwareAccelerated="true">
+        <uses-native-library
+            android:name="libcdsprpc.so"
+            android:required="false"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -24,6 +29,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
     </application>
 
 </manifest>

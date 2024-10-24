@@ -7,6 +7,7 @@ import android.os.BatteryManager
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.example.models.databinding.ActivityMainBinding
+import com.qualcomm.qti.QnnDelegate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,11 +22,11 @@ import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.InterpreterApi
 import org.tensorflow.lite.support.common.FileUtil.loadMappedFile
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 import java.io.File
 import java.lang.Runtime.getRuntime
+import java.nio.ByteOrder
 import kotlin.math.round
 import kotlin.time.Duration
 import kotlin.time.measureTime
@@ -140,15 +141,20 @@ class MainActivity : AppCompatActivity() {
 
     private val tflite : Interpreter by lazy {
         Interpreter(
-            loadMappedFile(this, modelPath), Interpreter.Options().setRuntime(InterpreterApi.Options.TfLiteRuntime.FROM_SYSTEM_ONLY)
+            loadMappedFile(this, modelPath), Interpreter.Options()
                 //.setNumThreads(1)
                 //.availableProcessors())
-                //.apply {
-                //this.addDelegate(
+                .apply {
+                    val options = QnnDelegate.Options()
+                    options.setBackendType(QnnDelegate.Options.BackendType.HTP_BACKEND)
+                    options.skelLibraryDir=applicationInfo.nativeLibraryDir
+                    options.cacheDir=cacheDir.path
+                this.addDelegate(
                     //GpuDelegate(GpuDelegateFactory.Options().setPrecisionLossAllowed(true))
-                    //nnappi
-                //)
-                //}
+                    //NnApiDelegate(NnApiDelegate.Options().setUseNnapiCpu(true))
+                    QnnDelegate(options)
+                )
+                }
         )
     }
     /*private val tfInputSize by lazy {
@@ -198,9 +204,10 @@ class MainActivity : AppCompatActivity() {
         val path = "/storage/emulated/0/Dataset/coco/val2017"
         val imgList = File(path).list()?.sorted()
         val outputBuffer = TensorBuffer.createFixedSize(tflite.getOutputTensor(0).shape(), tflite.getOutputTensor(0).dataType())
+        outputBuffer.buffer.order(ByteOrder.nativeOrder())
         val inputBuffer = TensorBuffer.createFixedSize(tflite.getInputTensor(0).shape(), tflite.getInputTensor(0).dataType())
-        val floatBuffer = FloatArray(inputSize * inputSize * 3)
-        val intBuffer = ByteArray(inputSize * inputSize * 3)
+        inputBuffer.buffer.order(ByteOrder.nativeOrder())
+        val floatBuffer = FloatArray(tflite.getInputTensor(0).numElements())
         var preprocessResult: PreprocessResult
         var info: String
         val output: MutableList<FloatArray> = MutableList(300) { FloatArray(6) }
@@ -210,8 +217,14 @@ class MainActivity : AppCompatActivity() {
         if (imgList != null) {
             for ((i, file) in imgList.withIndex()) {
                 val pre = measureTime {
-                    preprocessResult = preprocessImage("$path/$file",floatBuffer, intBuffer,isIntModel)
-                    inputBuffer.loadArray(floatBuffer)
+                    preprocessResult = preprocessImage("$path/$file",floatBuffer,isIntModel)
+                    if(!isIntModel){
+                        for (index in floatBuffer.indices) {
+                            floatBuffer[index] /= 255.0f
+                        }
+                    }
+                    inputBuffer.loadArray(floatBuffer)//TensorBuffer.loadArray() ya clampea a [0,255]
+
                 }
                 val run = measureTime {
                     tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
@@ -226,6 +239,8 @@ class MainActivity : AppCompatActivity() {
                 //if(outputSize!=0){
                     //json.add(outputToJSON(output, file,outputSize))
                 //}
+                inputBuffer.buffer.clear()
+                outputBuffer.buffer.clear()
                 energyConsumption[i] = tok-tik
                 preTime[i]=pre
                 runTime[i]=run
@@ -254,7 +269,7 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun preprocessImage(imgPath:String, floatBuffer: FloatArray, intBuffer : ByteArray, isIntModel: Boolean): PreprocessResult {
+    private fun preprocessImage(imgPath:String, floatBuffer: FloatArray, isIntModel: Boolean): PreprocessResult {
         val padFillValue = Scalar(114.0, 114.0, 114.0,0.0)
         val mat = Imgcodecs.imread(imgPath, Imgcodecs.IMREAD_COLOR)
         Imgproc.cvtColor(mat,mat,Imgproc.COLOR_BGR2RGB)
@@ -281,16 +296,8 @@ class MainActivity : AppCompatActivity() {
                 mat, paddedImg, top, bottom, left, right, Core.BORDER_CONSTANT, padFillValue
             )
         }
-        if(isIntModel){
-            paddedImg.get(0,0,intBuffer)
-        }
-        else{
-            paddedImg.convertTo(floatImg,CvType.CV_32F)
-            floatImg.get(0,0,floatBuffer)
-            for (i in floatBuffer.indices) {
-                floatBuffer[i] = floatBuffer[i] / 255.0f
-            }
-        }
+        paddedImg.convertTo(floatImg,CvType.CV_32F)
+        floatImg.get(0,0,floatBuffer)
         return PreprocessResult(ratio, Pair(left, top), imgShape)
     }
 
@@ -310,19 +317,18 @@ class MainActivity : AppCompatActivity() {
         val numThreads = getRuntime().availableProcessors()
         var chunkSize = inferenceOutput.flatSize / numThreads
         val jobs = mutableListOf<Job>()
-
+        val floatArray = inferenceOutput.floatArray
         if(isIntModel){
-            val intArray = inferenceOutput.intArray
             for (i in 0 until numThreads) {
                 val start = chunkSize * i
                 val end = chunkSize * (i + 1)
                 val job = CoroutineScope(Dispatchers.Default).launch {
                     for (index in start until end) {
                         if(index>=numOutputs*4) {
-                            reshapedInput[0][index % numOutputs][(index / numOutputs) % outputShape] = intArray[index].toFloat() / 255f
+                            reshapedInput[0][index % numOutputs][(index / numOutputs) % outputShape] = floatArray[index] / 255f
                         }
                         else{
-                            reshapedInput[0][index % numOutputs][(index / numOutputs) % outputShape] = intArray[index].toFloat() / 255f * inputSize
+                            reshapedInput[0][index % numOutputs][(index / numOutputs) % outputShape] = floatArray[index] / 255f * inputSize
                         }
                     }
                 }
@@ -332,8 +338,8 @@ class MainActivity : AppCompatActivity() {
                 job.join()
             }
             jobs.clear()
-        }else{
-            val floatArray = inferenceOutput.floatArray
+        }
+        else{
             for (i in 0 until numThreads) {
                 val start = chunkSize * i
                 val end = chunkSize * (i + 1)
