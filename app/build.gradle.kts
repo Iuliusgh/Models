@@ -92,6 +92,8 @@ dependencies {
     implementation(libs.tensorflow.lite.metadata)
     implementation(libs.tensorflow.lite)
     implementation(files("../libs/qtld-release.aar"))
+    implementation(files("../libs/snpe-release.aar"))
+    implementation(files("../libs/platform-validator.aar"))
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

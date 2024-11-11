@@ -95,6 +95,17 @@
         app:layout_constraintStart_toEndOf="@id/postTimeVal"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/energy"/>
+
+    <TextView
+        android:id="@+id/modelInfo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="model"
+        app:layout_constraintBottom_toTopOf="@+id/progress"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/button" />
+
     <Button
         android:id="@+id/button"
         android:layout_width="wrap_content"
