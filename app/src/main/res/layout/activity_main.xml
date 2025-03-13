@@ -5,16 +5,57 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <Button
+        android:id="@+id/button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Start"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/modelSelectorText"/>
+
+    <TextView
+        android:id="@+id/modelSelectorText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Select an interpreter"
+        app:layout_constraintBottom_toTopOf="@+id/modelInfo"
+        app:layout_constraintEnd_toStartOf="@+id/interpreterSelector"
+        app:layout_constraintStart_toStartOf="@+id/modelInfo"
+        app:layout_constraintTop_toBottomOf="@+id/button" />
+
+    <Spinner
+        android:id="@+id/interpreterSelector"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Select interpreter"
+        app:layout_constraintBottom_toTopOf="@id/modelInfo"
+        app:layout_constraintEnd_toEndOf="@+id/modelInfo"
+        app:layout_constraintStart_toEndOf="@id/modelSelectorText"
+        app:layout_constraintTop_toBottomOf="@id/button" />
+
+    <TextView
+        android:id="@+id/modelInfo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="model"
+        app:layout_constraintBottom_toTopOf="@+id/progress"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/interpreterSelector" />
+
+
     <TextView
         android:id="@+id/progress"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Info"
         android:textColor="@color/black"
-        app:layout_constraintTop_toBottomOf="@id/button"
-        app:layout_constraintBottom_toTopOf="@id/runTime"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/button" />
 
     <TextView
         android:id="@+id/preTime"
@@ -32,10 +73,9 @@
         android:layout_height="wrap_content"
         android:text="Model run\ntime (ms)"
         app:layout_constraintBottom_toTopOf="@id/runTimeVal"
-        app:layout_constraintTop_toBottomOf="@+id/progress"
-        app:layout_constraintStart_toEndOf="@id/preTime"
         app:layout_constraintEnd_toStartOf="@id/postTime"
-        />
+        app:layout_constraintStart_toEndOf="@id/preTime"
+        app:layout_constraintTop_toBottomOf="@+id/progress" />
 
     <TextView
         android:id="@+id/postTime"
@@ -44,8 +84,9 @@
         android:text="Postprocessing\ntime (ms)"
         app:layout_constraintBottom_toTopOf="@id/postTimeVal"
         app:layout_constraintEnd_toStartOf="@id/energy"
-        app:layout_constraintTop_toBottomOf="@+id/progress"
-        app:layout_constraintStart_toEndOf="@id/runTime"/>
+        app:layout_constraintStart_toEndOf="@id/runTime"
+        app:layout_constraintTop_toBottomOf="@+id/progress" />
+
     <TextView
         android:id="@+id/energy"
         android:layout_width="wrap_content"
@@ -54,8 +95,8 @@
         app:layout_constraintBottom_toTopOf="@+id/energyVal"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/postTime"
-        app:layout_constraintTop_toBottomOf="@id/progress"
-        />
+        app:layout_constraintTop_toBottomOf="@id/progress" />
+
     <TextView
         android:id="@+id/preTimeVal"
         android:layout_width="wrap_content"
@@ -63,7 +104,7 @@
         android:text=""
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@+id/runTimeVal"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintStart_toStartOf="@+id/preTime"
         app:layout_constraintTop_toBottomOf="@id/preTime" />
 
     <TextView
@@ -72,10 +113,9 @@
         android:layout_height="wrap_content"
         android:text=""
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/runTime"
-        app:layout_constraintStart_toEndOf="@id/preTimeVal"
         app:layout_constraintEnd_toStartOf="@id/postTimeVal"
-        />
+        app:layout_constraintStart_toEndOf="@id/preTimeVal"
+        app:layout_constraintTop_toBottomOf="@+id/runTime" />
 
     <TextView
         android:id="@+id/postTimeVal"
@@ -84,37 +124,18 @@
         android:text=""
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@id/energyVal"
-        app:layout_constraintTop_toBottomOf="@+id/postTime"
-        app:layout_constraintStart_toEndOf="@id/runTimeVal"/>
+        app:layout_constraintStart_toEndOf="@id/runTimeVal"
+        app:layout_constraintTop_toBottomOf="@+id/postTime" />
+
     <TextView
         android:id="@id/energyVal"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text=""
         app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="@+id/energy"
         app:layout_constraintStart_toEndOf="@id/postTimeVal"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/energy"/>
+        app:layout_constraintTop_toBottomOf="@id/energy" />
 
-    <TextView
-        android:id="@+id/modelInfo"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="model"
-        app:layout_constraintBottom_toTopOf="@+id/progress"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/button" />
-
-    <Button
-        android:id="@+id/button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="88dp"
-        android:text="Start"
-        app:layout_constraintBottom_toTopOf="@+id/progress"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

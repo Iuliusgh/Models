@@ -1,25 +1,15 @@
 pluginManagement {
     repositories {
-        google {
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
-            }
-        }
+        google()
         mavenCentral()
         gradlePluginPortal()
-        maven {  // Only for snapshot artifacts
-            name = "ossrh-snapshot"
-            url = uri("https://oss.sonatype.org/content/repositories/snapshots")
-        }
+        mavenCentral()
         flatDir {
-            dirs("app/libs")
+            dirs("src/main/jniLibs")
         }
     }
 }
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
         google()
         mavenCentral()

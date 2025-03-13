@@ -5,12 +5,12 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Bundle
+import android.util.Log
+import android.view.View
+import android.widget.AdapterView
 import androidx.appcompat.app.AppCompatActivity
 import com.example.models.databinding.ActivityMainBinding
 import com.qualcomm.qti.QnnDelegate
-import com.qualcomm.qti.snpe.FloatTensor
-import com.qualcomm.qti.snpe.NeuralNetwork
-import com.qualcomm.qti.snpe.SNPE
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,28 +24,37 @@ import org.opencv.core.Scalar
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
 import org.tensorflow.lite.DataType
+import org.tensorflow.lite.Delegate
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.InterpreterApi
 import org.tensorflow.lite.Tensor
-import org.tensorflow.lite.gpu.GpuDelegate
-import org.tensorflow.lite.gpu.GpuDelegateFactory
-import org.tensorflow.lite.support.common.FileUtil.loadMappedFile
-import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 import java.io.File
+import java.io.FileInputStream
 import java.lang.Runtime.getRuntime
+import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
 import kotlin.math.round
+import kotlin.math.roundToInt
 import kotlin.time.Duration
 import kotlin.time.measureTime
 
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
+    private val QNNTAG = "Qnn_Interpreter"
     private lateinit var activityMainBinding: ActivityMainBinding
-
-    private val inputSize: Int = 640
+    private val inputSize: Int = 224
     private val confidence = 0.001f
     private val iou = 0.7f
-    private val modelPath = "test_float32.tflite"
-    private val dlcPath = "test.dlc"
+    private val modelPath =
+        //"tflite/test_full_integer_quant_with_int16_act.tflite"
+    //"tflite/densenet121-snapdragon_8_gen_2.tflite"
+    // "tflite/inception_v3_quantized.tflite"
+        //"tflite/test_float16.tflite"
+        "tflite/test_integer_quant.tflite"
+
+    private val datasetPath = "/storage/emulated/0/Dataset/coco/val2017"
 
     //private val labelPath = "coco80_labels.txt"
     private val coco80to91: Map<Int, Int> = mapOf(
@@ -130,13 +139,6 @@ class MainActivity : AppCompatActivity() {
         78 to 89,  // hair drier
         79 to 90   // toothbrush
     )
-    private val SNPERuntimeDict: Map<Int,String> = mapOf(
-    0 to "CPU",
-    1 to "GPU",
-    2 to "DSP",
-    3 to "GPU_FLOAT16",
-    5 to "AIP",
-    )
     private val json: MutableList<String> = mutableListOf()
     private val preTime = Array(5000) { Duration.ZERO }
     private val runTime = Array(5000) { Duration.ZERO }
@@ -144,79 +146,39 @@ class MainActivity : AppCompatActivity() {
     private val energyConsumption = Array(5000) { 0 }
     private lateinit var inputQuant : Tensor.QuantizationParams
     private lateinit var outputQuant : Tensor.QuantizationParams
-    private val isSNPEModel = true
+    private lateinit var inputShape : IntArray
+    private lateinit var outputShape : IntArray
     data class PreprocessResult(
-
         val ratio: Pair<Float, Float>,
         val pad: Pair<Int, Int>,
         val ogImgShape: org.opencv.core.Size
     )
-    /*private val nnappi : NnApiDelegate by lazy {
-        NnApiDelegate(NnApiDelegate.Options().
-        setExecutionPreference(NnApiDelegate.Options.EXECUTION_PREFERENCE_SUSTAINED_SPEED).setAllowFp16(true))
-    }*/
 
-    private val tflite : Interpreter by lazy {
-        Interpreter(
-            loadMappedFile(this, modelPath), Interpreter.Options()
-                //.setNumThreads(1)
-                //.availableProcessors())
-                .apply {
-                    val options = QnnDelegate.Options()
-                    options.setBackendType(QnnDelegate.Options.BackendType.HTP_BACKEND)
-                    options.skelLibraryDir=applicationInfo.nativeLibraryDir
-                    //options.setGpuPrecision(QnnDelegate.Options.GpuPrecision.GPU_PRECISION_FP16)
-                    options.setHtpPrecision(QnnDelegate.Options.HtpPrecision.HTP_PRECISION_QUANTIZED)
-                    options.setHtpPdSession(QnnDelegate.Options.HtpPdSession.HTP_PD_SESSION_UNSIGNED)
-
-                this.addDelegate(
-                    GpuDelegate(GpuDelegateFactory.Options().setPrecisionLossAllowed(true))
-                    //NnApiDelegate(NnApiDelegate.Options().setUseNnapiCpu(true))
-                    //QnnDelegate(options)
-                )
-                }
-        )
-    }
-    private val network : NeuralNetwork by lazy{
-        val inputStream = assets.open(dlcPath)
-        SNPE.NeuralNetworkBuilder(application)
-            .setDebugEnabled(false)
-            .setRuntimeOrder(
-                NeuralNetwork.Runtime.AIP,
-                NeuralNetwork.Runtime.DSP,
-                NeuralNetwork.Runtime.GPU_FLOAT16,
-                NeuralNetwork.Runtime.GPU,
-                NeuralNetwork.Runtime.CPU
-                )
-            .setModel(inputStream,inputStream.available())
-            .build()
-    }
-
+    private lateinit var tfliteInterpreter : Interpreter
     /*private val tfInputSize by lazy {
         val inputIndex = 0
         val inputShape = tflite.getInputTensor(inputIndex).shape()
         Size(inputShape[2], inputShape[1]) // Order of axis is: {1, height, width, 3}
     }*/
-
+    private lateinit var dataType: DataType
+    private lateinit var inputBuffer : FloatArray
+    private lateinit var outputBuffer : FloatArray
+    //TFLITE aux variables
+    private lateinit var TFLITEInputBuffer : ByteBuffer
+    private lateinit var TFLITEOutputBuffer: ByteBuffer
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         OpenCVLoader.initLocal()
         activityMainBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(activityMainBinding.root)
-        activityMainBinding.modelInfo.text="Model executing on: ${SNPERuntimeDict[network.runtime.ordinal]}"
-        activityMainBinding.button.setOnClickListener {
-            CoroutineScope(Dispatchers.Default).launch {
-                validate()
-            }
-            activityMainBinding.button.isEnabled = false
-        }
-        inputQuant = tflite.getInputTensor(0).quantizationParams()
-        outputQuant = tflite.getOutputTensor(0).quantizationParams()
+        //val pv = PlatformValidator(PlatformValidatorUtil.Runtime.DSP).runtimeCheck(application)
+        initUI()
+        //Permissions to access dataset
         if (checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.READ_MEDIA_IMAGES), 0)
-        }/*
+        }
+        /*
         val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-
         // Get current battery level in percentage
         val batteryLevel = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         // Get current battery voltage (in mV)
@@ -232,64 +194,165 @@ class MainActivity : AppCompatActivity() {
         println("Battery Current (Now): $batteryCurrentNow µA")
         */
     }
+    override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+        initializeInterpreter(parent.getItemAtPosition(position).toString())
+    }
+    override fun onNothingSelected(parent: AdapterView<*>?) {
+        TODO("Not yet implemented")
+    }
+    private fun initUI(){
+        //Button to start the validation
+        activityMainBinding.button.setOnClickListener {
+            initializeInterpreter("")
+            CoroutineScope(Dispatchers.Default).launch {
+                validate()
+            }
+            activityMainBinding.button.isEnabled = false
+        }
+        //Fill the spinner with the available interpreters
+        //ArrayAdapter.createFromResource(this,R.array.available_interpreters, android.R.layout.simple_spinner_item).also {
+            //it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            //activityMainBinding.interpreterSelector.adapter = it
+        //}
+        //activityMainBinding.interpreterSelector.onItemSelectedListener = this
+    }
+    private fun initializeInterpreter(selectedInterpreter :String){
+        var text = ""
+        val qnnDelegate = initNPUDelegate()
+        //Log.i(QNNTAG,"QNNdelegate available: " + qnnDelegate.isAvailable.toString())
+        val interpreterOptions = Interpreter.Options()
+        interpreterOptions.runtime = InterpreterApi.Options.TfLiteRuntime.FROM_APPLICATION_ONLY
+        interpreterOptions.setAllowBufferHandleOutput(true)
+        interpreterOptions.setUseNNAPI(false)
+        interpreterOptions.numThreads = getRuntime().availableProcessors()
+        //interpreterOptions.setUseXNNPACK(true)
+        try {
+            interpreterOptions.addDelegate(qnnDelegate)
+        }
+        catch (e:Exception){
+            Log.e("Delegate","Delegate error" ,e)
+        }
+        //interpreterOptions.addDelegate(QnnDelegate(QnnDelegate.Options()))
+        val modelFile = loadModelFileToBuffer()
+        //modelFile.order(ByteOrder.nativeOrder())
+        try {
+            tfliteInterpreter = Interpreter(modelFile, interpreterOptions)
+        }
+        catch (e: Exception){
+            Log.e("QNN_Int","Cannot initialize the qnn interpreter",e)
+        }
+        dataType = tfliteInterpreter.getInputTensor(0).dataType()
+        inputQuant = tfliteInterpreter.getInputTensor(0).quantizationParams()
+        outputQuant = tfliteInterpreter.getOutputTensor(0).quantizationParams()
+        inputShape = tfliteInterpreter.getInputTensor(0).shape()
+        outputShape = tfliteInterpreter.getOutputTensor(0).shape()
+        TFLITEInputBuffer = ByteBuffer.allocateDirect(inputShape.reduce{acc, i -> acc * i } * tfliteInterpreter.getInputTensor(0).dataType().byteSize())
+        //TFLITEInputBuffer = TensorBuffer.createFixedSize(tfliteInterpreter.getInputTensor(0).shape(), tfliteInterpreter.getInputTensor(0).dataType())
+        TFLITEInputBuffer.order(ByteOrder.nativeOrder())
+        TFLITEOutputBuffer = ByteBuffer.allocateDirect(outputShape.reduce{acc, i -> acc * i } * tfliteInterpreter.getOutputTensor(0).dataType().byteSize())
+        //TFLITEOutputBuffer = TensorBuffer.createFixedSize(tfliteInterpreter.getOutputTensor(0).shape(), tfliteInterpreter.getOutputTensor(0).dataType())
+        TFLITEOutputBuffer.order(ByteOrder.nativeOrder())
+    /*"SNPE" -> {
+        val model = resources.openRawResource(R.raw.test_float32_quantized)
+        snpeNN = SNPE.NeuralNetworkBuilder(application)
+            .setRuntimeOrder(NeuralNetwork.Runtime.DSP)
+            .setModel(model,model.available())
+            .build()
 
+    }*/
+
+        activityMainBinding.modelInfo.text=text
+
+    }
+    private fun loadModelFileToBuffer():MappedByteBuffer{
+        val fd = assets.openFd(modelPath)
+        val fileChannel = FileInputStream(fd.fileDescriptor).channel
+        val buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY,fd.startOffset,fd.declaredLength)
+        return buffer
+    }
+    private fun initNPUDelegate(): Delegate {
+        var text = ""
+        val options = QnnDelegate.Options()
+        //options.setLogLevel(QnnDelegate.Options.LogLevel.LOG_LEVEL_VERBOSE)
+        options.skelLibraryDir = applicationInfo.nativeLibraryDir
+        //options.libraryPath = applicationInfo.nativeLibraryDir
+        options.cacheDir = cacheDir.absolutePath
+        options.modelToken="7d94710092391108927ab0fe94cee635"
+        if(QnnDelegate.checkCapability((QnnDelegate.Capability.DSP_RUNTIME))){
+            options.setBackendType(QnnDelegate.Options.BackendType.DSP_BACKEND)
+            text = "Model executing on: DSP"
+        }
+        else{
+            val isHTP16 = QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)
+            val isHTPQuant = QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_QUANTIZED)
+            if(!isHTP16 && !isHTPQuant){
+                Log.e(QNNTAG,"NPU not supported")
+            }
+            options.setBackendType(QnnDelegate.Options.BackendType.HTP_BACKEND)
+            options.setHtpUseConvHmx(QnnDelegate.Options.HtpUseConvHmx.HTP_CONV_HMX_ON)
+            options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_BURST)
+            text = "Model executing on: HTP_Int"
+
+            if (isHTP16){
+            options.setHtpPrecision(QnnDelegate.Options.HtpPrecision.HTP_PRECISION_FP16)
+            text = "Model executing on: HTP_Float16"
+           }
+        }
+        //options.setGpuPrecision(QnnDelegate.Options.GpuPrecision.GPU_PRECISION_FP16)
+        //options.setHtpPdSession(QnnDelegate.Options.HtpPdSession.HTP_PD_SESSION_UNSIGNED)
+        //options.setBackendType(QnnDelegate.Options.BackendType.UNDEFINED_BACKEND)
+        return QnnDelegate(options)
+    }
     @SuppressLint("DefaultLocale")
     private suspend fun validate() {
-        val tensorShape = network.inputTensorsShapes["input"]!!
-        val tensor = network.createFloatTensor(tensorShape[0],tensorShape[1],tensorShape[2],tensorShape[3])
-        val isIntModel =tflite.getInputTensor(0).dataType() == DataType.UINT8
+        var isIntModel = false
         val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-        val path = "/storage/emulated/0/Dataset/coco/val2017"
-        val imgList = File(path).list()?.sorted()
-        val outputBuffer = TensorBuffer.createFixedSize(tflite.getOutputTensor(0).shape(), tflite.getOutputTensor(0).dataType())
-        outputBuffer.buffer.order(ByteOrder.nativeOrder())
-        val inputBuffer = TensorBuffer.createFixedSize(tflite.getInputTensor(0).shape(), tflite.getInputTensor(0).dataType())
-        inputBuffer.buffer.order(ByteOrder.nativeOrder())
-        val floatBuffer = FloatArray(tflite.getInputTensor(0).numElements())
+        val imgList = File(datasetPath).list()?.sorted()
         var preprocessResult: PreprocessResult
         var info: String
         val output: MutableList<FloatArray> = MutableList(300) { FloatArray(6) }
         var outputSize : Int
-        var tik =0
-        var tok =0
-
+        var tik = 0
+        var tok = 0
+        var pre: Duration
+        var run : Duration
+        var post : Duration
+        inputBuffer = FloatArray(inputShape.reduce{acc, i -> acc * i } )
+        outputBuffer = FloatArray(outputShape.reduce{acc, i -> acc * i } )
         if (imgList != null) {
             for ((i, file) in imgList.withIndex()) {
-                val pre = measureTime {
-                    preprocessResult = preprocessImage("$path/$file",floatBuffer,isIntModel)
-                    if(!isIntModel){
-                        for (index in floatBuffer.indices) {
-                            floatBuffer[index] /= 255.0f
+                pre = measureTime {
+                    preprocessResult = preprocessImage("$datasetPath/$file",inputBuffer)
+                    if(inputQuant.scale != 0.0f){
+                        for (index in inputBuffer.indices){
+                            inputBuffer[index] = inputBuffer[index] / inputQuant.scale + inputQuant.zeroPoint
                         }
                     }
-                    inputBuffer.loadArray(floatBuffer)//TensorBuffer.loadArray() ya clampea a [0,255]
-                    tensor.write(floatBuffer,0,floatBuffer.size)
+                    array2Buffer(TFLITEInputBuffer,inputBuffer,dataType)
+                    //TFLITEInputBuffer.put(inputBuffer)//TensorBuffer.loadArray() ya clampea a [0,255]
                 }
-                val inputsMap:MutableMap<String,FloatTensor> = mutableMapOf()
-                var outputsMap:MutableMap<String,FloatTensor>
-                val run = measureTime {
+                run = measureTime {
                     tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                    //tflite.run(inputBuffer.buffer, outputBuffer.buffer)
-                    inputsMap["input"] = tensor
-                    outputsMap = network.execute(inputsMap)
+                    tfliteInterpreter.run(TFLITEInputBuffer, TFLITEOutputBuffer)
                     tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                }
 
-                 val post = measureTime {
-                     if(isSNPEModel){
-                         val floatArray = FloatArray(outputsMap["output"]!!.size)
-                         outputsMap["output"]!!.read(floatArray,0,outputBuffer.flatSize)
-                         outputBuffer.loadArray(floatArray)
-                     }
-                    outputSize=nms(outputBuffer, output, isIntModel)
-                    postprocess(output, outputSize, preprocessResult.ratio, preprocessResult.pad, preprocessResult.ogImgShape)
                 }
-
-                if(outputSize!=0){
-                    json.add(outputToJSON(output, file,outputSize))
+                post = measureTime {
+                    TFLITEOutputBuffer.rewind()
+                    buffer2Array(TFLITEOutputBuffer,outputBuffer,dataType)
+                    if(outputQuant.scale != 0.0f){
+                        for (index in outputBuffer.indices){
+                            outputBuffer[index] = (outputBuffer[index] - outputQuant.zeroPoint) * outputQuant.scale
+                        }
+                    }
+                    //outputSize=nms(outputBuffer, output, outputShape)
+                    //postprocess(output, outputSize, preprocessResult.ratio, preprocessResult.pad, preprocessResult.ogImgShape)
                 }
-                inputBuffer.buffer.clear()
-                outputBuffer.buffer.clear()
+                TFLITEInputBuffer.clear()
+                TFLITEOutputBuffer.clear()
+                //if(outputSize!=0){
+                    //json.add(outputToJSON(output, file,outputSize))
+                //}
                 energyConsumption[i] = tok-tik
                 preTime[i]=pre
                 runTime[i]=run
@@ -301,8 +364,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        json[0] = "["+json[0]
-        json[json.size - 1]=json[json.size - 1]+"]"
+        //json[0] = "["+json[0]
+        //json[json.size - 1]=json[json.size - 1]+"]"
         File(filesDir, "output.json").writeText(json.joinToString(separator = ","))
         withContext(Dispatchers.Main) {
             activityMainBinding.progress.text = "Completed"
@@ -312,14 +375,11 @@ class MainActivity : AppCompatActivity() {
             activityMainBinding.energyVal.text="AVG: ${(energyConsumption.reduce { acc, l -> acc + l }).toFloat()/5e3} uAh"
         }
     }
-
     public override fun onDestroy() {
-        tflite.close()
-        network.release()
+        tfliteInterpreter.close()
         super.onDestroy()
     }
-
-    private fun preprocessImage(imgPath:String, floatBuffer: FloatArray, isIntModel: Boolean): PreprocessResult {
+    private fun preprocessImage(imgPath:String, floatBuffer: FloatArray): PreprocessResult {
         val padFillValue = Scalar(114.0, 114.0, 114.0,0.0)
         val mat = Imgcodecs.imread(imgPath, Imgcodecs.IMREAD_COLOR)
         Imgproc.cvtColor(mat,mat,Imgproc.COLOR_BGR2RGB)
@@ -346,7 +406,7 @@ class MainActivity : AppCompatActivity() {
                 mat, paddedImg, top, bottom, left, right, Core.BORDER_CONSTANT, padFillValue
             )
         }
-        paddedImg.convertTo(floatImg,CvType.CV_32F)
+        paddedImg.convertTo(floatImg,CvType.CV_32F,1/255.0)
         /*if(isSNPEModel){
             val offset = floatImg.total().toInt()
             for(i in 0 until floatImg.rows()){
@@ -364,61 +424,36 @@ class MainActivity : AppCompatActivity() {
 
         return PreprocessResult(ratio, Pair(left, top), imgShape)
     }
-    //TFLITE nms variant
-    private suspend fun nms(inferenceOutput: TensorBuffer, output: MutableList<FloatArray>, isIntModel: Boolean, maxNMS: Int = 30000, maxWH: Int = 7860, maxDet: Int = 300, ): Int {
+    private suspend fun nms(inferenceOutput: FloatArray, output: MutableList<FloatArray>, outputShape: IntArray, maxNMS: Int = 30000, maxWH: Int = 7860, maxDet: Int = 300,  ): Int {
         //Variable declaration
-        val outputShape = inferenceOutput.shape[1]//84-> classes + 4 bbox coords
-        val numOutputs = inferenceOutput.shape[2]//8400 outputs
-        val reshapedInput = Array(1) { Array(numOutputs) { FloatArray(outputShape) } } //1,8400,84
+        val outputSize = outputShape[1]
+        val numOutputs = outputShape[2]
+        val reshapedInput = Array(1) { Array(numOutputs) { FloatArray(outputSize) } } //1,8400,84
         //1D array to [1][84][8400]
         val numThreads = getRuntime().availableProcessors()
-        var chunkSize = inferenceOutput.flatSize / numThreads
+        var chunkSize = inferenceOutput.size / numThreads
         val jobs = mutableListOf<Job>()
-        val floatArray = inferenceOutput.floatArray
-        if(isIntModel){
-            for (i in 0 until numThreads) {
-                val start = chunkSize * i
-                val end = chunkSize * (i + 1)
-                val job = CoroutineScope(Dispatchers.Default).launch {
-                    for (index in start until end) {
-                        if(index>=numOutputs*4) {
-                            reshapedInput[0][index % numOutputs][(index / numOutputs) % outputShape] = outputQuant.scale * (floatArray[index] - outputQuant.zeroPoint)
-                        }
-                        else{
-                            reshapedInput[0][index % numOutputs][(index / numOutputs) % outputShape] = outputQuant.scale * (floatArray[index] - outputQuant.zeroPoint ) * inputSize
-                        }
+        for (i in 0 until numThreads) {
+            val start = chunkSize * i
+            val end = chunkSize * (i + 1)
+            val job = CoroutineScope(Dispatchers.Default).launch {
+                for (index in start until end) {
+                    if(index<numOutputs*4) {
+                        reshapedInput[0][index % numOutputs][(index / numOutputs) % outputSize] = inferenceOutput[index] * inputSize
+                    }
+                    else{
+                        reshapedInput[0][index % numOutputs][(index / numOutputs) % outputSize] = inferenceOutput[index]
                     }
                 }
-                jobs.add(job)
             }
-            for (job in jobs) {
-                job.join()
-            }
-            jobs.clear()
+            jobs.add(job)
         }
-        else{
-            for (i in 0 until numThreads) {
-                val start = chunkSize * i
-                val end = chunkSize * (i + 1)
-                val job = CoroutineScope(Dispatchers.Default).launch {
-                    for (index in start until end) {
-                        if(index>=numOutputs*4) {
-                            reshapedInput[0][index % numOutputs][(index / numOutputs) % outputShape] = floatArray[index]
-                        }
-                        else{
-                            reshapedInput[0][index % numOutputs][(index / numOutputs) % outputShape] = floatArray[index] * inputSize
-                        }
-                    }
-                }
-                jobs.add(job)
-            }
-            for (job in jobs) {
-                job.join()
-            }
-            jobs.clear()
+        for (job in jobs) {
+            job.join()
         }
+        jobs.clear()
         //# classes output shape - 4 bbox values
-        val numClasses = outputShape - 4
+        val numClasses = outputSize - 4
         //Unused
         //val numMasks = inferenceOutput.shape[1] - 4 - numClasses
         val candidates = Array(numOutputs) { false }
@@ -429,7 +464,7 @@ class MainActivity : AppCompatActivity() {
             val job = CoroutineScope(Dispatchers.Default).launch {
                 for (index in start until end) {
                     var max = 0f
-                    for (j in 4 until outputShape) {
+                    for (j in 4 until outputSize) {
                         val value = reshapedInput[0][index][j]
                         if (value > max)
                             max = value
@@ -570,6 +605,33 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+    }
+}
+
+private fun array2Buffer(buffer: ByteBuffer, array : FloatArray, bufferDataType : DataType) {
+    for (i in array.indices) {
+        val byteArray = ByteArray(bufferDataType.byteSize())
+        for (j in 0 until bufferDataType.byteSize()){
+            if(bufferDataType==DataType.FLOAT32){
+                byteArray[j]=array[i].toRawBits().shr(j*8).toByte()
+            }
+            else{
+                byteArray[j]=array[i].roundToInt().shr(j*8).toByte()
+            }
+
+        }
+        buffer.put(byteArray)
+    }
+    buffer.rewind()
+}
+private fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: DataType){
+    val byteSize = bufferDataType.byteSize()
+    for(i in 0 until buffer.capacity()/byteSize){
+        var bits : Int = 0x00
+        for (j in 0 until byteSize){
+            bits =  bits or (buffer[i*byteSize+j].toInt() and 0xFF).shl(8*j)
+        }
+        array[i] = bits.toFloat()
     }
 }
 

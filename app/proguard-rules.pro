@@ -20,3 +20,5 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 -keep class org.tensorflow.lite.** { *; }
+-keep class com.qualcomm.qti.** { *; }
+-keep class vendor.qti.hardware.** { *; }

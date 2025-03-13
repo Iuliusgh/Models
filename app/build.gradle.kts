@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.models"
-        minSdk = 30
+        minSdk = 34
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -17,11 +17,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
-        }
-        externalNativeBuild {
-            cmake {
-                cppFlags += ""
-            }
         }
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -32,20 +27,25 @@ android {
         enable = true
     }
     buildTypes {
+        debug{
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            ndk {
+                //noinspection ChromeOsAbiSupport
+                abiFilters += listOf("arm64-v8a")
+            }
+        }
         release {
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
@@ -59,8 +59,14 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs.useLegacyPackaging = true
     }
     ndkVersion = "28.0.12433566 rc1"
+    sourceSets{
+        getByName("main") {
+            jniLibs.srcDirs("src/msin/jniLibs")
+        }
+    }
 
 }
 
@@ -81,19 +87,15 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.camera.core)
-    implementation(libs.androidx.coordinatorlayout)
     implementation(project(":opencv"))
-    implementation(libs.opencv)
+    implementation(libs.androidx.coordinatorlayout)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.tensorflow.lite.gpu)
-    implementation(libs.tensorflow.lite.support)
+    api(libs.tensorflow.lite.support)
     implementation(libs.tensorflow.lite.gpu.delegate.plugin)
     implementation(libs.tensorflow.lite.gpu.api)
     implementation(libs.tensorflow.lite.metadata)
-    implementation(libs.tensorflow.lite)
-    implementation(files("../libs/qtld-release.aar"))
-    implementation(files("../libs/snpe-release.aar"))
-    implementation(files("../libs/platform-validator.aar"))
+    api(libs.tensorflow.lite)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -101,4 +103,9 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+    implementation(libs.qnn.runtime)
+    implementation(libs.qnn.litert.delegate)
+    //implementation(files("../libs/qtld-release.aar"))
+    //implementation(files("../libs/platform-validator.aar"))
+    //implementation(files("../libs/snpe-release.aar"))
 }

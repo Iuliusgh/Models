@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" />
+    <uses-feature android:name="qcom.hardware.dsp" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <application
         android:allowBackup="true"
@@ -13,11 +14,13 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Models"
-        tools:targetApi="31"
         android:extractNativeLibs="true"
         android:hardwareAccelerated="true">
         <uses-native-library
             android:name="libcdsprpc.so"
+            android:required="false"/>
+        <uses-native-library
+            android:name="libOpenCL.so"
             android:required="false"/>
         <activity
             android:name=".MainActivity"
