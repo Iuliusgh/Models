@@ -20,7 +20,7 @@ android {
         }
         ndk {
             //noinspection ChromeOsAbiSupport
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
     dataBinding{
@@ -32,7 +32,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             ndk {
                 //noinspection ChromeOsAbiSupport
-                abiFilters += listOf("arm64-v8a")
+                abiFilters += listOf("arm64-v8a","x86_64")
             }
         }
         release {

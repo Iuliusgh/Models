@@ -18,7 +18,7 @@
         android:hardwareAccelerated="true">
         <uses-native-library
             android:name="libcdsprpc.so"
-            android:required="false"/>
+            android:required="true"/>
         <uses-native-library
             android:name="libOpenCL.so"
             android:required="false"/>

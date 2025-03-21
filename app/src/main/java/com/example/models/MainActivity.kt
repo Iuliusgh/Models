@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import com.example.models.databinding.ActivityMainBinding
 import com.qualcomm.qti.QnnDelegate
@@ -44,16 +45,10 @@ import kotlin.time.measureTime
 class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val QNNTAG = "Qnn_Interpreter"
     private lateinit var activityMainBinding: ActivityMainBinding
-    private val inputSize: Int = 224
+    private var inputSize: Int = 640
     private val confidence = 0.001f
     private val iou = 0.7f
-    private val modelPath =
-        //"tflite/test_full_integer_quant_with_int16_act.tflite"
-    //"tflite/densenet121-snapdragon_8_gen_2.tflite"
-    // "tflite/inception_v3_quantized.tflite"
-        //"tflite/test_float16.tflite"
-        "tflite/test_integer_quant.tflite"
-
+    private var modelPath =""
     private val datasetPath = "/storage/emulated/0/Dataset/coco/val2017"
 
     //private val labelPath = "coco80_labels.txt"
@@ -154,7 +149,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         val ogImgShape: org.opencv.core.Size
     )
 
-    private lateinit var tfliteInterpreter : Interpreter
+    private var tfliteInterpreter : Interpreter? = null
     /*private val tfInputSize by lazy {
         val inputIndex = 0
         val inputShape = tflite.getInputTensor(inputIndex).shape()
@@ -163,6 +158,15 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private lateinit var dataType: DataType
     private lateinit var inputBuffer : FloatArray
     private lateinit var outputBuffer : FloatArray
+    private val devices : Map<Int,String> = mapOf(
+        0 to "CPU - Single core",
+        1 to "CPU - Multicore",
+        2 to "GPU - Float32",
+        3 to "GPU - Float16",
+        4 to "NPU - Int8",
+        5 to "NPU - Float16"
+    )
+    private var selectedDevice = -1
     //TFLITE aux variables
     private lateinit var TFLITEInputBuffer : ByteBuffer
     private lateinit var TFLITEOutputBuffer: ByteBuffer
@@ -195,61 +199,89 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         */
     }
     override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
-        initializeInterpreter(parent.getItemAtPosition(position).toString())
+        when(parent.id){
+            activityMainBinding.selectedModel.id -> {
+                activityMainBinding.selectedModel.text = parent.getItemAtPosition(position).toString()
+                if (tfliteInterpreter != null) {
+                    tfliteInterpreter!!.close()
+                }
+                try {
+                    modelPath = "tflite/" + parent.getItemAtPosition(position).toString()
+                } catch (e: Exception) {
+                    Log.e("Interpreter", "Error intializing interpreter.", e)
+                }
+                activityMainBinding.datatypeText.text = dataType.toString()
+            }
+            activityMainBinding.device.id -> {
+                selectedDevice = parent.getItemAtPosition(position) as Int
+            }
+        }
     }
     override fun onNothingSelected(parent: AdapterView<*>?) {
-        TODO("Not yet implemented")
     }
     private fun initUI(){
         //Button to start the validation
         activityMainBinding.button.setOnClickListener {
-            initializeInterpreter("")
             CoroutineScope(Dispatchers.Default).launch {
+                initializeInterpreter(selectedDevice)
                 validate()
             }
             activityMainBinding.button.isEnabled = false
         }
         //Fill the spinner with the available interpreters
+        val modelDir = assets.list("tflite")!!.toList()//File(,"tflite").listFiles()//!!.map{it.name}
+        val modelArray = ArrayAdapter(this,android.R.layout.simple_spinner_item,modelDir)
+        modelArray.setDropDownViewResource(android.R.layout.simple_spinner_item)
+        activityMainBinding.modelSelector.adapter=modelArray
+        activityMainBinding.device.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,devices.values.toList())
         //ArrayAdapter.createFromResource(this,R.array.available_interpreters, android.R.layout.simple_spinner_item).also {
             //it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             //activityMainBinding.interpreterSelector.adapter = it
         //}
-        //activityMainBinding.interpreterSelector.onItemSelectedListener = this
+        activityMainBinding.modelSelector.onItemSelectedListener = this
+        activityMainBinding.modelSelector.post{activityMainBinding.modelSelector.setSelection(-1)}
+        activityMainBinding.device.post{activityMainBinding.device.setSelection(-1)}
     }
-    private fun initializeInterpreter(selectedInterpreter :String){
-        var text = ""
-        val qnnDelegate = initNPUDelegate()
-        //Log.i(QNNTAG,"QNNdelegate available: " + qnnDelegate.isAvailable.toString())
+    private fun initializeInterpreter(selectedInterpreter : Int){
         val interpreterOptions = Interpreter.Options()
-        interpreterOptions.runtime = InterpreterApi.Options.TfLiteRuntime.FROM_APPLICATION_ONLY
         interpreterOptions.setAllowBufferHandleOutput(true)
         interpreterOptions.setUseNNAPI(false)
-        interpreterOptions.numThreads = getRuntime().availableProcessors()
-        //interpreterOptions.setUseXNNPACK(true)
-        try {
-            interpreterOptions.addDelegate(qnnDelegate)
+        interpreterOptions.runtime = InterpreterApi.Options.TfLiteRuntime.FROM_APPLICATION_ONLY
+        if(selectedInterpreter == 0 || selectedInterpreter == 1){
+            interpreterOptions.setUseXNNPACK(true)
+            if(selectedInterpreter == 1){
+                interpreterOptions.numThreads = getRuntime().availableProcessors()
+            }
         }
-        catch (e:Exception){
-            Log.e("Delegate","Delegate error" ,e)
+        else{
+            val qnnDelegate = initQNNDelegate(selectedDevice)
+            try {
+                interpreterOptions.addDelegate(qnnDelegate)
+                Log.i("QNNDelegate","Delegate initialized successfully")
+            }
+            catch (e:Exception){
+                Log.e("QNNDelegate","QNNDelegate instantiation error" ,e)
+            }
         }
-        //interpreterOptions.addDelegate(QnnDelegate(QnnDelegate.Options()))
         val modelFile = loadModelFileToBuffer()
         //modelFile.order(ByteOrder.nativeOrder())
         try {
             tfliteInterpreter = Interpreter(modelFile, interpreterOptions)
+            Log.i("Delegate","Delegate instantiated successfully using model: " + modelPath )
         }
         catch (e: Exception){
-            Log.e("QNN_Int","Cannot initialize the qnn interpreter",e)
+            Log.e("Interpreter","Cannot initialize TFLiteInterpreter",e)
         }
-        dataType = tfliteInterpreter.getInputTensor(0).dataType()
-        inputQuant = tfliteInterpreter.getInputTensor(0).quantizationParams()
-        outputQuant = tfliteInterpreter.getOutputTensor(0).quantizationParams()
-        inputShape = tfliteInterpreter.getInputTensor(0).shape()
-        outputShape = tfliteInterpreter.getOutputTensor(0).shape()
-        TFLITEInputBuffer = ByteBuffer.allocateDirect(inputShape.reduce{acc, i -> acc * i } * tfliteInterpreter.getInputTensor(0).dataType().byteSize())
+        inputSize = tfliteInterpreter!!.getInputTensor(0).shape()[1]
+        dataType = tfliteInterpreter!!.getInputTensor(0).dataType()
+        inputQuant = tfliteInterpreter!!.getInputTensor(0).quantizationParams()
+        outputQuant = tfliteInterpreter!!.getOutputTensor(0).quantizationParams()
+        inputShape = tfliteInterpreter!!.getInputTensor(0).shape()
+        outputShape = tfliteInterpreter!!.getOutputTensor(0).shape()
+        TFLITEInputBuffer = ByteBuffer.allocateDirect(inputShape.reduce{acc, i -> acc * i } * tfliteInterpreter!!.getInputTensor(0).dataType().byteSize())
         //TFLITEInputBuffer = TensorBuffer.createFixedSize(tfliteInterpreter.getInputTensor(0).shape(), tfliteInterpreter.getInputTensor(0).dataType())
         TFLITEInputBuffer.order(ByteOrder.nativeOrder())
-        TFLITEOutputBuffer = ByteBuffer.allocateDirect(outputShape.reduce{acc, i -> acc * i } * tfliteInterpreter.getOutputTensor(0).dataType().byteSize())
+        TFLITEOutputBuffer = ByteBuffer.allocateDirect(outputShape.reduce{acc, i -> acc * i } * tfliteInterpreter!!.getOutputTensor(0).dataType().byteSize())
         //TFLITEOutputBuffer = TensorBuffer.createFixedSize(tfliteInterpreter.getOutputTensor(0).shape(), tfliteInterpreter.getOutputTensor(0).dataType())
         TFLITEOutputBuffer.order(ByteOrder.nativeOrder())
     /*"SNPE" -> {
@@ -261,7 +293,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
 
     }*/
 
-        activityMainBinding.modelInfo.text=text
+        //activityMainBinding.modelInfo.text=text
 
     }
     private fun loadModelFileToBuffer():MappedByteBuffer{
@@ -270,57 +302,71 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         val buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY,fd.startOffset,fd.declaredLength)
         return buffer
     }
-    private fun initNPUDelegate(): Delegate {
-        var text = ""
+    private fun initQNNDelegate(selectedDevice : Int): Delegate {
         val options = QnnDelegate.Options()
         //options.setLogLevel(QnnDelegate.Options.LogLevel.LOG_LEVEL_VERBOSE)
         options.skelLibraryDir = applicationInfo.nativeLibraryDir
         //options.libraryPath = applicationInfo.nativeLibraryDir
         options.cacheDir = cacheDir.absolutePath
         options.modelToken="7d94710092391108927ab0fe94cee635"
-        if(QnnDelegate.checkCapability((QnnDelegate.Capability.DSP_RUNTIME))){
-            options.setBackendType(QnnDelegate.Options.BackendType.DSP_BACKEND)
-            text = "Model executing on: DSP"
+        if(selectedDevice == 2 || selectedDevice == 3) {
+            if (!QnnDelegate.checkCapability(QnnDelegate.Capability.GPU_RUNTIME)) {
+                throw Exception()
+            } else {
+                options.setBackendType(QnnDelegate.Options.BackendType.GPU_BACKEND)
+                options.setGpuPerformanceMode(QnnDelegate.Options.GpuPerformanceMode.GPU_PERFORMANCE_HIGH)
+            }
+            if (selectedDevice == 2) {
+                options.setGpuPrecision(QnnDelegate.Options.GpuPrecision.GPU_PRECISION_FP32)
+            } else {
+                options.setGpuPrecision(QnnDelegate.Options.GpuPrecision.GPU_PRECISION_FP16)
+            }
         }
         else{
-            val isHTP16 = QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)
-            val isHTPQuant = QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_QUANTIZED)
-            if(!isHTP16 && !isHTPQuant){
-                Log.e(QNNTAG,"NPU not supported")
+            val isHTP16Capable = QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)
+            val isHTPQuantCapable = QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_QUANTIZED)
+            if (!isHTPQuantCapable && !isHTP16Capable) {
+                Log.e(QNNTAG,"Execution on NPU not supported")
+                throw Exception()
             }
             options.setBackendType(QnnDelegate.Options.BackendType.HTP_BACKEND)
             options.setHtpUseConvHmx(QnnDelegate.Options.HtpUseConvHmx.HTP_CONV_HMX_ON)
             options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_BURST)
-            text = "Model executing on: HTP_Int"
 
-            if (isHTP16){
-            options.setHtpPrecision(QnnDelegate.Options.HtpPrecision.HTP_PRECISION_FP16)
-            text = "Model executing on: HTP_Float16"
-           }
+            if(selectedDevice == 4 && isHTPQuantCapable){
+                options.setHtpPrecision(QnnDelegate.Options.HtpPrecision.HTP_PRECISION_QUANTIZED)
+                Log.i(QNNTAG,"Model executing on: HTP_Int")
+            }
+            else if (selectedDevice == 5 && isHTP16Capable){
+                options.setHtpPrecision(QnnDelegate.Options.HtpPrecision.HTP_PRECISION_FP16)
+                Log.i(QNNTAG,"Model executing on: HTP_Float16")
+            }
         }
-        //options.setGpuPrecision(QnnDelegate.Options.GpuPrecision.GPU_PRECISION_FP16)
-        //options.setHtpPdSession(QnnDelegate.Options.HtpPdSession.HTP_PD_SESSION_UNSIGNED)
-        //options.setBackendType(QnnDelegate.Options.BackendType.UNDEFINED_BACKEND)
+
+        //if(QnnDelegate.checkCapability((QnnDelegate.Capability.DSP_RUNTIME))){
+            //options.setBackendType(QnnDelegate.Options.BackendType.DSP_BACKEND)
+            //Log.i(QNNTAG,"Model executing on: DSP")
+        //}
         return QnnDelegate(options)
     }
     @SuppressLint("DefaultLocale")
     private suspend fun validate() {
-        var isIntModel = false
+        //var isIntModel = false
         val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
         val imgList = File(datasetPath).list()?.sorted()
         var preprocessResult: PreprocessResult
         var info: String
         val output: MutableList<FloatArray> = MutableList(300) { FloatArray(6) }
         var outputSize : Int
-        var tik = 0
-        var tok = 0
+        var tik : Int
+        var tok : Int
         var pre: Duration
         var run : Duration
         var post : Duration
         inputBuffer = FloatArray(inputShape.reduce{acc, i -> acc * i } )
         outputBuffer = FloatArray(outputShape.reduce{acc, i -> acc * i } )
         if (imgList != null) {
-            for ((i, file) in imgList.withIndex()) {
+            for ((i, file) in imgList.take(10).withIndex()) {
                 pre = measureTime {
                     preprocessResult = preprocessImage("$datasetPath/$file",inputBuffer)
                     if(inputQuant.scale != 0.0f){
@@ -333,7 +379,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                 }
                 run = measureTime {
                     tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                    tfliteInterpreter.run(TFLITEInputBuffer, TFLITEOutputBuffer)
+                    tfliteInterpreter!!.run(TFLITEInputBuffer, TFLITEOutputBuffer)
                     tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
 
                 }
@@ -345,18 +391,21 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                             outputBuffer[index] = (outputBuffer[index] - outputQuant.zeroPoint) * outputQuant.scale
                         }
                     }
-                    //outputSize=nms(outputBuffer, output, outputShape)
-                    //postprocess(output, outputSize, preprocessResult.ratio, preprocessResult.pad, preprocessResult.ogImgShape)
+                    outputSize=nms(outputBuffer, output, outputShape)
+                    postprocess(output, outputSize, preprocessResult.ratio, preprocessResult.pad, preprocessResult.ogImgShape)
                 }
                 TFLITEInputBuffer.clear()
                 TFLITEOutputBuffer.clear()
-                //if(outputSize!=0){
-                    //json.add(outputToJSON(output, file,outputSize))
-                //}
+                if(outputSize!=0){
+                    json.add(outputToJSON(output, file,outputSize))
+                }
                 energyConsumption[i] = tok-tik
                 preTime[i]=pre
+                activityMainBinding.preTimeVal.text=pre.toString()
                 runTime[i]=run
+                activityMainBinding.runTimeVal.text=run.toString()
                 postTime[i]=post
+                activityMainBinding.postTimeVal.text=post.toString()
                 info = (i.toFloat() / imgList.size.toFloat() * 100f).toString()
                 withContext(Dispatchers.Main) {
                     activityMainBinding.progress.text = "Progress: $info %"
@@ -364,9 +413,9 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                 }
             }
         }
-        //json[0] = "["+json[0]
-        //json[json.size - 1]=json[json.size - 1]+"]"
-        File(filesDir, "output.json").writeText(json.joinToString(separator = ","))
+        json[0] = "["+json[0]
+        json[json.size - 1]=json[json.size - 1]+"]"
+        File(this.getExternalFilesDir(null), "output.json").writeText(json.joinToString(separator = ","))
         withContext(Dispatchers.Main) {
             activityMainBinding.progress.text = "Completed"
             activityMainBinding.preTimeVal.text="AVG: ${preTime.reduce { acc, duration -> acc + duration }/5000}"
@@ -376,7 +425,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         }
     }
     public override fun onDestroy() {
-        tfliteInterpreter.close()
+        tfliteInterpreter!!.close()
         super.onDestroy()
     }
     private fun preprocessImage(imgPath:String, floatBuffer: FloatArray): PreprocessResult {
@@ -424,7 +473,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
 
         return PreprocessResult(ratio, Pair(left, top), imgShape)
     }
-    private suspend fun nms(inferenceOutput: FloatArray, output: MutableList<FloatArray>, outputShape: IntArray, maxNMS: Int = 30000, maxWH: Int = 7860, maxDet: Int = 300,  ): Int {
+    private suspend fun nms(inferenceOutput: FloatArray, output: MutableList<FloatArray>, outputShape: IntArray, maxNMS: Int = 30000, maxWH: Int = 7860, maxDet: Int = 300): Int {
         //Variable declaration
         val outputSize = outputShape[1]
         val numOutputs = outputShape[2]
