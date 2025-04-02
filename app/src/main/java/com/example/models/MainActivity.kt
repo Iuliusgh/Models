@@ -5,10 +5,12 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.models.databinding.ActivityMainBinding
 import com.qualcomm.qti.QnnDelegate
@@ -50,8 +52,10 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val iou = 0.7f
     private var modelPath =""
     private val datasetPath = "/storage/emulated/0/Dataset/coco/val2017"
-
+    private var isModelSelected = false
+    private var isDeviceSelected = false
     //private val labelPath = "coco80_labels.txt"
+    private val placeholder = listOf("---")
     private val coco80to91: Map<Int, Int> = mapOf(
         0 to 1,    // person
         1 to 2,    // bicycle
@@ -134,7 +138,6 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         78 to 89,  // hair drier
         79 to 90   // toothbrush
     )
-    private val json: MutableList<String> = mutableListOf()
     private val preTime = Array(5000) { Duration.ZERO }
     private val runTime = Array(5000) { Duration.ZERO }
     private val postTime = Array(5000) { Duration.ZERO }
@@ -155,6 +158,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         val inputShape = tflite.getInputTensor(inputIndex).shape()
         Size(inputShape[2], inputShape[1]) // Order of axis is: {1, height, width, 3}
     }*/
+    private val numThreads = getRuntime().availableProcessors()
     private lateinit var dataType: DataType
     private lateinit var inputBuffer : FloatArray
     private lateinit var outputBuffer : FloatArray
@@ -167,6 +171,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         5 to "NPU - Float16"
     )
     private var selectedDevice = -1
+    private var selectedModel = "No model"
     //TFLITE aux variables
     private lateinit var TFLITEInputBuffer : ByteBuffer
     private lateinit var TFLITEOutputBuffer: ByteBuffer
@@ -199,26 +204,39 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         */
     }
     override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
-        when(parent.id){
-            activityMainBinding.selectedModel.id -> {
-                activityMainBinding.selectedModel.text = parent.getItemAtPosition(position).toString()
-                if (tfliteInterpreter != null) {
-                    tfliteInterpreter!!.close()
+        if (parent.getItemAtPosition(position) != placeholder[0]) {
+            when (parent.id) {
+                activityMainBinding.modelSelector.id -> {
+                    activityMainBinding.selectedModel.text = parent.getItemAtPosition(position).toString()
+                    if (tfliteInterpreter != null) {
+                        tfliteInterpreter!!.close()
+                    }
+                    try {
+                        selectedModel = parent.getItemAtPosition(position).toString()
+                        modelPath = "tflite/" + selectedModel
+                        isModelSelected=true
+                    } catch (e: Exception) {
+                        Log.e("Interpreter", "Error intializing interpreter.", e)
+                    }
                 }
-                try {
-                    modelPath = "tflite/" + parent.getItemAtPosition(position).toString()
-                } catch (e: Exception) {
-                    Log.e("Interpreter", "Error intializing interpreter.", e)
+                activityMainBinding.device.id -> {
+                    selectedDevice = position - 1
+                    try{
+                        initializeInterpreter(position)
+                        activityMainBinding.datatypeText.text = dataType.toString()
+                        isDeviceSelected=true
+                    }
+                    catch(e:Exception){
+                        Toast.makeText(this,e.toString(),Toast.LENGTH_SHORT).show()
+                    }
                 }
-                activityMainBinding.datatypeText.text = dataType.toString()
-            }
-            activityMainBinding.device.id -> {
-                selectedDevice = parent.getItemAtPosition(position) as Int
             }
         }
+        if(isModelSelected && isDeviceSelected){
+            activityMainBinding.button.isEnabled=true
+        }
     }
-    override fun onNothingSelected(parent: AdapterView<*>?) {
-    }
+    override fun onNothingSelected(parent: AdapterView<*>?) {}
     private fun initUI(){
         //Button to start the validation
         activityMainBinding.button.setOnClickListener {
@@ -229,18 +247,19 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             activityMainBinding.button.isEnabled = false
         }
         //Fill the spinner with the available interpreters
-        val modelDir = assets.list("tflite")!!.toList()//File(,"tflite").listFiles()//!!.map{it.name}
+        val modelDir = placeholder + assets.list("tflite")!!.toList()//File(,"tflite").listFiles()//!!.map{it.name}
         val modelArray = ArrayAdapter(this,android.R.layout.simple_spinner_item,modelDir)
         modelArray.setDropDownViewResource(android.R.layout.simple_spinner_item)
         activityMainBinding.modelSelector.adapter=modelArray
-        activityMainBinding.device.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,devices.values.toList())
+        activityMainBinding.device.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,placeholder + devices.values.toList())
         //ArrayAdapter.createFromResource(this,R.array.available_interpreters, android.R.layout.simple_spinner_item).also {
             //it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             //activityMainBinding.interpreterSelector.adapter = it
         //}
         activityMainBinding.modelSelector.onItemSelectedListener = this
-        activityMainBinding.modelSelector.post{activityMainBinding.modelSelector.setSelection(-1)}
-        activityMainBinding.device.post{activityMainBinding.device.setSelection(-1)}
+        activityMainBinding.device.onItemSelectedListener = this
+        //activityMainBinding.modelSelector.setSelection(-1)
+        //activityMainBinding.device.setSelection(-1)
     }
     private fun initializeInterpreter(selectedInterpreter : Int){
         val interpreterOptions = Interpreter.Options()
@@ -261,16 +280,18 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             }
             catch (e:Exception){
                 Log.e("QNNDelegate","QNNDelegate instantiation error" ,e)
+                throw e
             }
         }
-        val modelFile = loadModelFileToBuffer()
-        //modelFile.order(ByteOrder.nativeOrder())
+        val modelFile = loadModelFileToBuffer(modelPath)
+        modelFile.order(ByteOrder.nativeOrder())
         try {
             tfliteInterpreter = Interpreter(modelFile, interpreterOptions)
             Log.i("Delegate","Delegate instantiated successfully using model: " + modelPath )
         }
         catch (e: Exception){
             Log.e("Interpreter","Cannot initialize TFLiteInterpreter",e)
+            throw e
         }
         inputSize = tfliteInterpreter!!.getInputTensor(0).shape()[1]
         dataType = tfliteInterpreter!!.getInputTensor(0).dataType()
@@ -284,6 +305,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         TFLITEOutputBuffer = ByteBuffer.allocateDirect(outputShape.reduce{acc, i -> acc * i } * tfliteInterpreter!!.getOutputTensor(0).dataType().byteSize())
         //TFLITEOutputBuffer = TensorBuffer.createFixedSize(tfliteInterpreter.getOutputTensor(0).shape(), tfliteInterpreter.getOutputTensor(0).dataType())
         TFLITEOutputBuffer.order(ByteOrder.nativeOrder())
+        Log.i("Interpreter","Initialized input and output buffers")
     /*"SNPE" -> {
         val model = resources.openRawResource(R.raw.test_float32_quantized)
         snpeNN = SNPE.NeuralNetworkBuilder(application)
@@ -296,8 +318,8 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         //activityMainBinding.modelInfo.text=text
 
     }
-    private fun loadModelFileToBuffer():MappedByteBuffer{
-        val fd = assets.openFd(modelPath)
+    private fun loadModelFileToBuffer(path:String):MappedByteBuffer{
+        val fd = assets.openFd(path)
         val fileChannel = FileInputStream(fd.fileDescriptor).channel
         val buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY,fd.startOffset,fd.declaredLength)
         return buffer
@@ -308,15 +330,15 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         options.skelLibraryDir = applicationInfo.nativeLibraryDir
         //options.libraryPath = applicationInfo.nativeLibraryDir
         options.cacheDir = cacheDir.absolutePath
-        options.modelToken="7d94710092391108927ab0fe94cee635"
-        if(selectedDevice == 2 || selectedDevice == 3) {
+        //options.modelToken="7d94710092391108927ab0fe94cee635"
+        if(devices[selectedDevice] ==  "GPU - Float32"|| devices[selectedDevice] == "GPU - Float16") {
             if (!QnnDelegate.checkCapability(QnnDelegate.Capability.GPU_RUNTIME)) {
                 throw Exception()
             } else {
                 options.setBackendType(QnnDelegate.Options.BackendType.GPU_BACKEND)
                 options.setGpuPerformanceMode(QnnDelegate.Options.GpuPerformanceMode.GPU_PERFORMANCE_HIGH)
             }
-            if (selectedDevice == 2) {
+            if (devices[selectedDevice] == "GPU - Float32") {
                 options.setGpuPrecision(QnnDelegate.Options.GpuPrecision.GPU_PRECISION_FP32)
             } else {
                 options.setGpuPrecision(QnnDelegate.Options.GpuPrecision.GPU_PRECISION_FP16)
@@ -351,7 +373,8 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     }
     @SuppressLint("DefaultLocale")
     private suspend fun validate() {
-        //var isIntModel = false
+        val datasetChunk = 5000
+        val json: MutableList<String> = mutableListOf()
         val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
         val imgList = File(datasetPath).list()?.sorted()
         var preprocessResult: PreprocessResult
@@ -365,8 +388,10 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         var post : Duration
         inputBuffer = FloatArray(inputShape.reduce{acc, i -> acc * i } )
         outputBuffer = FloatArray(outputShape.reduce{acc, i -> acc * i } )
+        Log.i("Benchmark","Starting benchmark...")
         if (imgList != null) {
-            for ((i, file) in imgList.take(10).withIndex()) {
+            for ((i, file) in imgList.take(datasetChunk).withIndex()) {
+                Log.i("Benchmark","Starting pre...")
                 pre = measureTime {
                     preprocessResult = preprocessImage("$datasetPath/$file",inputBuffer)
                     if(inputQuant.scale != 0.0f){
@@ -377,12 +402,14 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                     array2Buffer(TFLITEInputBuffer,inputBuffer,dataType)
                     //TFLITEInputBuffer.put(inputBuffer)//TensorBuffer.loadArray() ya clampea a [0,255]
                 }
+                Log.i("Benchmark","Starting inference...")
                 run = measureTime {
                     tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
                     tfliteInterpreter!!.run(TFLITEInputBuffer, TFLITEOutputBuffer)
                     tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
 
                 }
+                Log.i("Benchmark","Starting post...")
                 post = measureTime {
                     TFLITEOutputBuffer.rewind()
                     buffer2Array(TFLITEOutputBuffer,outputBuffer,dataType)
@@ -401,28 +428,62 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                 }
                 energyConsumption[i] = tok-tik
                 preTime[i]=pre
-                activityMainBinding.preTimeVal.text=pre.toString()
+                //activityMainBinding.preTimeVal.text=pre.toString()
                 runTime[i]=run
-                activityMainBinding.runTimeVal.text=run.toString()
+                //activityMainBinding.runTimeVal.text=run.toString()
                 postTime[i]=post
-                activityMainBinding.postTimeVal.text=post.toString()
-                info = (i.toFloat() / imgList.size.toFloat() * 100f).toString()
+               //activityMainBinding.postTimeVal.text=post.toString()
+                info = (i.toFloat() / datasetChunk * 100f).toString()
                 withContext(Dispatchers.Main) {
                     activityMainBinding.progress.text = "Progress: $info %"
-                    activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
+                    //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
                 }
             }
         }
         json[0] = "["+json[0]
         json[json.size - 1]=json[json.size - 1]+"]"
-        File(this.getExternalFilesDir(null), "output.json").writeText(json.joinToString(separator = ","))
+        writeOutput(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),selectedModel + "_" + devices[selectedDevice]!!.replace(" ","_") + "_" + "output.json", json)
+        val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/datasetChunk
+        val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/datasetChunk
+        val postTimeVal = postTime.reduce { acc, duration -> acc + duration }/datasetChunk
+        val energyVal = (energyConsumption.reduce { acc, l -> acc + l }).toFloat()/datasetChunk
         withContext(Dispatchers.Main) {
             activityMainBinding.progress.text = "Completed"
-            activityMainBinding.preTimeVal.text="AVG: ${preTime.reduce { acc, duration -> acc + duration }/5000}"
-            activityMainBinding.runTimeVal.text="AVG: ${runTime.reduce { acc, duration -> acc + duration }/5000}"
-            activityMainBinding.postTimeVal.text="AVG: ${postTime.reduce { acc, duration -> acc + duration }/5000}"
-            activityMainBinding.energyVal.text="AVG: ${(energyConsumption.reduce { acc, l -> acc + l }).toFloat()/5e3} uAh"
+            activityMainBinding.preTimeVal.text="AVG: ${preTimeVal}"
+            activityMainBinding.runTimeVal.text="AVG: ${runTimeVal}"
+            activityMainBinding.postTimeVal.text="AVG: ${postTimeVal}"
+            activityMainBinding.energyVal.text="AVG: ${energyVal} uAh"
+            activityMainBinding.button.isEnabled = true
         }
+    }
+    private
+    fun writeOutput(path : File, name :String, json:MutableList<String>){
+        val dirName = "InferenceResult"
+        val newPath =File(path,dirName)
+        if (!File(path,dirName).exists()){
+            newPath.mkdirs()
+        }
+        val text = json.joinToString(separator = ",")
+        val file  = File(newPath,name)
+        try {
+            if(file.exists()){
+                file.delete()
+            }
+            //file.createNewFile()
+            Log.i("FileWrite","Writing output to file...")
+            file.writeText(text)
+            if(file.readText()!=text){
+                throw Exception("Error writing output to file, text mismatch")
+            }
+            //file.outputStream().write(text.toByteArray(Charsets.UTF_8))
+            //file.outputStream().fd.sync()
+            //file.outputStream().close()
+        }
+        catch (e:Exception) {
+            Log.e("FileWrite", "Output to file failed" + e.toString())
+            throw(e)
+        }
+        Log.i("FileWrite","Output written to file successfully.")
     }
     public override fun onDestroy() {
         tfliteInterpreter!!.close()
@@ -479,7 +540,6 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         val numOutputs = outputShape[2]
         val reshapedInput = Array(1) { Array(numOutputs) { FloatArray(outputSize) } } //1,8400,84
         //1D array to [1][84][8400]
-        val numThreads = getRuntime().availableProcessors()
         var chunkSize = inferenceOutput.size / numThreads
         val jobs = mutableListOf<Job>()
         for (i in 0 until numThreads) {
@@ -655,32 +715,84 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         }
     }
     }
-}
 
-private fun array2Buffer(buffer: ByteBuffer, array : FloatArray, bufferDataType : DataType) {
-    for (i in array.indices) {
-        val byteArray = ByteArray(bufferDataType.byteSize())
-        for (j in 0 until bufferDataType.byteSize()){
-            if(bufferDataType==DataType.FLOAT32){
-                byteArray[j]=array[i].toRawBits().shr(j*8).toByte()
+    private suspend fun array2Buffer(buffer: ByteBuffer, array : FloatArray, bufferDataType : DataType) {
+        val byteSize = bufferDataType.byteSize()
+        val jobs = mutableListOf<Job>()
+        val chunkSize = array.size / numThreads
+        for (thread in 0 until numThreads) {
+            val start = chunkSize * thread
+            val end = chunkSize * (thread + 1)
+            val job = CoroutineScope(Dispatchers.Default).launch {
+                for (i in start until end){
+                        if(bufferDataType==DataType.FLOAT32){
+                            //buffer.put(,array[i].toRawBits().shr(j*8).toByte())
+                            buffer.putFloat(i*byteSize,array[i])
+                        }
+                        else{
+                            for (j in 0 until byteSize){
+                            buffer.put(i*byteSize+j,array[i].roundToInt().shr(j*8).toByte())
+                        }
+                   }
+                }
             }
-            else{
-                byteArray[j]=array[i].roundToInt().shr(j*8).toByte()
+            jobs.add(job)
+        }
+        for (job in jobs) {
+            job.join()
+        }
+        jobs.clear()
+        /*for (i in array.indices) {
+            val byteArray = ByteArray(byteSize)
+            for (j in 0 until byteSize){
+                if(bufferDataType==DataType.FLOAT32){
+                    buffer.put(i*byteSize+j,array[i].toRawBits().shr(j*8).toByte())
+                }
+                else{
+                    buffer.put(i*byteSize+j,array[i].roundToInt().shr(j*8).toByte())
+                }
             }
-
-        }
-        buffer.put(byteArray)
+            //buffer.put(byteArray)
+        }*/
+        buffer.rewind()
     }
-    buffer.rewind()
-}
-private fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: DataType){
-    val byteSize = bufferDataType.byteSize()
-    for(i in 0 until buffer.capacity()/byteSize){
-        var bits : Int = 0x00
-        for (j in 0 until byteSize){
-            bits =  bits or (buffer[i*byteSize+j].toInt() and 0xFF).shl(8*j)
+    private suspend fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: DataType){
+        val byteSize = bufferDataType.byteSize()
+        val chunkSize = buffer.capacity() / (byteSize * numThreads)
+        val jobs = mutableListOf<Job>()
+        for (i in 0 until numThreads) {
+            val start = chunkSize * i
+            val end = chunkSize * (i + 1)
+            val job = CoroutineScope(Dispatchers.Default).launch {
+                val byteArray = ByteArray(byteSize)
+                var fourByteArray:ByteArray
+                for (index in start until end) {
+                    for (j in 0 until byteSize){
+                        byteArray[j] = buffer[index*byteSize+j]
+                    }
+                    if(byteSize<4){
+                        val fill = 4 - byteSize
+                        fourByteArray = ByteArray(fill) + byteArray
+                    }
+                    else{
+                        fourByteArray = byteArray
+                    }
+                    array[index] = ByteBuffer.wrap(fourByteArray).order(ByteOrder.nativeOrder()).float
+                }
+            }
+            jobs.add(job)
         }
-        array[i] = bits.toFloat()
+        for (job in jobs) {
+            job.join()
+        }
+        jobs.clear()
+        /*for(i in 0 until buffer.capacity()/byteSize){
+            val byteArray = ByteArray(byteSize)
+            for (j in 0 until byteSize){
+                byteArray[j] = buffer[i*byteSize+j]
+            }
+            array[i] = ByteBuffer.wrap(byteArray).order(ByteOrder.nativeOrder()).float
+
+        }*/
     }
 }
-
