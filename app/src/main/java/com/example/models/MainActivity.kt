@@ -391,7 +391,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         Log.i("Benchmark","Starting benchmark...")
         if (imgList != null) {
             for ((i, file) in imgList.take(datasetChunk).withIndex()) {
-                Log.i("Benchmark","Starting pre...")
+                //Log.i("Benchmark","Starting pre...")
                 pre = measureTime {
                     preprocessResult = preprocessImage("$datasetPath/$file",inputBuffer)
                     if(inputQuant.scale != 0.0f){
@@ -402,14 +402,14 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                     array2Buffer(TFLITEInputBuffer,inputBuffer,dataType)
                     //TFLITEInputBuffer.put(inputBuffer)//TensorBuffer.loadArray() ya clampea a [0,255]
                 }
-                Log.i("Benchmark","Starting inference...")
+                //Log.i("Benchmark","Starting inference...")
                 run = measureTime {
                     tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
                     tfliteInterpreter!!.run(TFLITEInputBuffer, TFLITEOutputBuffer)
                     tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
 
                 }
-                Log.i("Benchmark","Starting post...")
+                //Log.i("Benchmark","Starting post...")
                 post = measureTime {
                     TFLITEOutputBuffer.rewind()
                     buffer2Array(TFLITEOutputBuffer,outputBuffer,dataType)
