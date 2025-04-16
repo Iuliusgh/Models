@@ -1,12 +1,10 @@
 package com.example.models
 
-import kotlinx.coroutines.CoroutineScope
+
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Tensor.QuantizationParams
 import java.nio.ByteBuffer
@@ -14,53 +12,7 @@ import java.nio.ByteOrder
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-suspend fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: DataType){
-    val byteSize = bufferDataType.byteSize()
-    parallelArrayOperation(buffer.capacity()/byteSize,{ i ->
-        val byteArray = ByteArray(byteSize)
-        val fourByteArray:ByteArray
-        for (j in 0 until byteSize){
-            byteArray[j] = buffer[i*byteSize+j]
-        }
-        if(byteSize<4){
-            val fill = 4 - byteSize
-            fourByteArray = ByteArray(fill) + byteArray
-        }
-        else{
-            fourByteArray = byteArray
-        }
-        array[i] = ByteBuffer.wrap(fourByteArray).order(ByteOrder.nativeOrder()).float
-    })
-    /*val chunkSize = buffer.capacity() / (byteSize * numThreads)
-    val jobs = mutableListOf<Job>()
-    for (i in 0 until numThreads) {
-        val start = chunkSize * i
-        val end = chunkSize * (i + 1)
-        val job = CoroutineScope(Dispatchers.Default).launch {
-            val byteArray = ByteArray(byteSize)
-            var fourByteArray:ByteArray
-            for (index in start until end) {
-                for (j in 0 until byteSize){
-                    byteArray[j] = buffer[index*byteSize+j]
-                }
-                if(byteSize<4){
-                    val fill = 4 - byteSize
-                    fourByteArray = ByteArray(fill) + byteArray
-                }
-                else{
-                    fourByteArray = byteArray
-                }
-                array[index] = ByteBuffer.wrap(fourByteArray).order(ByteOrder.nativeOrder()).float
-            }
-        }
-        jobs.add(job)
-    }
-    for (job in jobs) {
-        job.join()
-    }
-    jobs.clear()*/
-}
-suspend fun array2Buffer(buffer: ByteBuffer, array : FloatArray, bufferDataType : DataType) {
+suspend fun array2Buffer(array : FloatArray,buffer: ByteBuffer, bufferDataType : DataType) {
     val byteSize = bufferDataType.byteSize()
     parallelArrayOperation(array.size/byteSize,{ i ->
         if(bufferDataType==DataType.FLOAT32){
@@ -99,6 +51,53 @@ suspend fun array2Buffer(buffer: ByteBuffer, array : FloatArray, bufferDataType 
     }
     jobs.clear()*/
     buffer.rewind()
+}
+suspend fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: DataType){
+    buffer.rewind()
+    val byteSize = bufferDataType.byteSize()
+    val byteArray = ByteArray(byteSize)
+    var fourByteArray:ByteArray
+    parallelArrayOperation(buffer.capacity()/byteSize,{ i ->
+        for (j in 0 until byteSize){
+            byteArray[j] = buffer[i*byteSize+j]
+        }
+        if(byteSize<4){
+            val fill = 4 - byteSize
+            fourByteArray = ByteArray(fill){0} + byteArray
+        }
+        else{
+            fourByteArray = byteArray
+        }
+        array[i] = ByteBuffer.wrap(fourByteArray).order(ByteOrder.nativeOrder()).float
+    })
+    /*val chunkSize = buffer.capacity() / (byteSize * numThreads)
+    val jobs = mutableListOf<Job>()
+    for (i in 0 until numThreads) {
+        val start = chunkSize * i
+        val end = chunkSize * (i + 1)
+        val job = CoroutineScope(Dispatchers.Default).launch {
+            val byteArray = ByteArray(byteSize)
+            var fourByteArray:ByteArray
+            for (index in start until end) {
+                for (j in 0 until byteSize){
+                    byteArray[j] = buffer[index*byteSize+j]
+                }
+                if(byteSize<4){
+                    val fill = 4 - byteSize
+                    fourByteArray = ByteArray(fill) + byteArray
+                }
+                else{
+                    fourByteArray = byteArray
+                }
+                array[index] = ByteBuffer.wrap(fourByteArray).order(ByteOrder.nativeOrder()).float
+            }
+        }
+        jobs.add(job)
+    }
+    for (job in jobs) {
+        job.join()
+    }
+    jobs.clear()*/
 }
 suspend fun quantize(array: FloatArray,quant:QuantizationParams){
     parallelArrayOperation(array.size,{ i ->
@@ -143,13 +142,13 @@ suspend fun dequantize(array: FloatArray, quant: QuantizationParams){
     }
     jobs.clear()*/
 }
-suspend fun parallelArrayOperation(size:Int,block: (Int) -> Unit,threads:Int=Runtime.getRuntime().availableProcessors()){
+suspend fun parallelArrayOperation(size:Int, block: (Int) -> Unit,threads:Int=Runtime.getRuntime().availableProcessors()){
     val chunkSize = size / threads
     coroutineScope {
         (0 until threads).map { threadId ->
+            val start = chunkSize * threadId
+            val end = min(chunkSize * (threadId + 1),size)
             async(Dispatchers.Default){
-                val start = chunkSize * threadId
-                val end = min(start + chunkSize,size)
                 for (index in start until end) {
                     block(index)
                 }

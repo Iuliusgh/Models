@@ -14,7 +14,8 @@ import java.nio.ByteOrder
 
 class Interpreter (private val context: Context){
     private var initialized = false
-    private val devices = queryDeviceCapabilities()
+    private val deviceList = queryDeviceCapabilities()
+    lateinit var executingDevice : String
     /*: Map<Int,String> = mapOf(
         0 to "CPU - Single core",
         1 to "CPU - Multicore",
@@ -55,12 +56,12 @@ class Interpreter (private val context: Context){
         }
         return deviceCapabilities
     }
-    fun initializeOptions(selectedDevice : Int) {
+    fun initializeOptions() {
         interpreterOptions.runtime = InterpreterApi.Options.TfLiteRuntime.FROM_APPLICATION_ONLY
         interpreterOptions.setAllowBufferHandleOutput(true)
         interpreterOptions.setUseNNAPI(false)
         interpreterOptions.setUseXNNPACK(false)
-        when (devices[selectedDevice]) {
+        when (executingDevice) {
             "CPU_SC" -> {
                 interpreterOptions.setUseXNNPACK(true)
             }
@@ -72,7 +73,7 @@ class Interpreter (private val context: Context){
 
             else -> {
                 try {
-                    interpreterOptions.addDelegate(initQNNDelegate(selectedDevice))
+                    interpreterOptions.addDelegate(initQNNDelegate())
                     Log.i("Interpreter", "QnnDelegate initialized successfully")
                 } catch (e: UnsupportedOperationException) {
                     Log.e("Interpreter", "Error during QnnDelegate initialization\n$e")
@@ -81,12 +82,12 @@ class Interpreter (private val context: Context){
         }
     }
     private fun initializeIOInfo(){
-        inputInfo.dataType = liteRTInterpreter.getInputTensor(0).dataType()
-        inputInfo.quant = liteRTInterpreter.getInputTensor(0).quantizationParams()
-        inputInfo.shape = liteRTInterpreter.getInputTensor(0).shape()
-        outputInfo.dataType = liteRTInterpreter.getOutputTensor(0).dataType()
-        outputInfo.quant = liteRTInterpreter.getOutputTensor(0).quantizationParams()
-        outputInfo.shape = liteRTInterpreter.getInputTensor(0).shape()
+        inputInfo = IOInfo(liteRTInterpreter.getInputTensor(0).dataType(),
+            liteRTInterpreter.getInputTensor(0).quantizationParams(),
+            liteRTInterpreter.getInputTensor(0).shape())
+        outputInfo= IOInfo(liteRTInterpreter.getOutputTensor(0).dataType(),
+            liteRTInterpreter.getOutputTensor(0).quantizationParams(),
+            liteRTInterpreter.getOutputTensor(0).shape())
     }
     private fun initializeIOBuffers(){
         inputBuffer = ByteBuffer.allocateDirect(inputInfo.shape.reduce{acc,i -> acc * i} * inputInfo.dataType.byteSize())
@@ -109,13 +110,13 @@ class Interpreter (private val context: Context){
         model.setIOShape(inputInfo.shape,outputInfo.shape)
         Log.i("Interpreter","Initialized input and output buffers")
     }
-    private fun initQNNDelegate(selectedDevice : Int): Delegate {
+    private fun initQNNDelegate(): Delegate {
         val options = QnnDelegate.Options()
         //options.setLogLevel(QnnDelegate.Options.LogLevel.LOG_LEVEL_VERBOSE)
         options.skelLibraryDir = context.applicationInfo.nativeLibraryDir
         //options.libraryPath = applicationInfo.nativeLibraryDir
         options.cacheDir = context.cacheDir.absolutePath
-        when(devices[selectedDevice]){
+        when(executingDevice){
             "GPU_FP32" -> {
                 options.setBackendType(QnnDelegate.Options.BackendType.GPU_BACKEND)
                 options.setGpuPrecision(QnnDelegate.Options.GpuPrecision.GPU_PRECISION_FP32)
@@ -148,7 +149,7 @@ class Interpreter (private val context: Context){
         return  QnnDelegate(options)
     }
     fun getDeviceList():List<String>{
-        return devices
+        return deviceList
     }
     fun isInitialized():Boolean{
         return initialized
@@ -160,12 +161,16 @@ class Interpreter (private val context: Context){
     fun run(input:ByteBuffer,output:ByteBuffer){
         liteRTInterpreter.run(input,output)
     }
+    fun selectExecutionDevice(device:Int){
+        executingDevice=deviceList[device]
+    }
     fun isInputQuantized():Boolean{
         return inputInfo.quant.scale != 0.0f
     }
     fun getInputQuant():QuantizationParams{
         return inputInfo.quant
-    }fun isOutputQuantized():Boolean{
+    }
+    fun isOutputQuantized():Boolean{
         return outputInfo.quant.scale != 0.0f
     }
     fun getOutputQuant():QuantizationParams{
@@ -176,6 +181,16 @@ class Interpreter (private val context: Context){
     }
     fun getOutputDatatype():DataType{
         return outputInfo.dataType
+    }
+    fun getInputBuffer():ByteBuffer{
+        return inputBuffer
+    }
+    fun getOutputBuffer():ByteBuffer{
+        return outputBuffer
+    }
+    fun clearIOBuffers(){
+        inputBuffer.clear()
+        outputBuffer.clear()
     }
 }
 

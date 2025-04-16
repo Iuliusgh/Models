@@ -7,14 +7,15 @@ import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 
-open class Model<T>(private val context: Context):ModelInterface<T> {
+open class Model(private val context: Context):ModelInterface {
     private val TAG = "Model"
     private var loaded = false
+    open val exportFileExtension:String = ""
     private lateinit var modelBuffer:MappedByteBuffer
     protected lateinit var inputShape:IntArray
-    private lateinit var outputShape:IntArray
-    protected var modelInput = FloatArray(inputShape.reduce{acc,i -> acc * i})
-    private var modelOutput = FloatArray(outputShape.reduce{acc,i -> acc * i})
+    protected lateinit var outputShape:IntArray
+    lateinit var modelInput :FloatArray
+    lateinit var modelOutput :FloatArray
 
     fun loadModelFile(path:String) {
         loaded = false
@@ -39,10 +40,8 @@ open class Model<T>(private val context: Context):ModelInterface<T> {
         inputShape = inShape
         outputShape = outShape
     }
-    fun getModelInput():FloatArray{
-        return modelInput
-    }
-    fun getModelOutput():FloatArray{
-        return modelOutput
+    fun initializeIO(){
+        modelInput = FloatArray(inputShape.reduce{acc,i -> acc * i})
+        modelOutput = FloatArray(outputShape.reduce{acc,i -> acc * i})
     }
 }

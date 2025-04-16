@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import org.opencv.core.Core
 import org.opencv.core.CvType
@@ -11,19 +12,110 @@ import org.opencv.core.Mat
 import org.opencv.core.Scalar
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
+import java.io.File
 import kotlin.math.round
+import kotlin.properties.Delegates
 
-class YOLO(context: Context) : Model<String>(context) {
+class YOLO(context: Context) : Model(context) {
+    private val coco80to91: Map<Int, Int> = mapOf(
+        0 to 1,    // person
+        1 to 2,    // bicycle
+        2 to 3,    // car
+        3 to 4,    // motorcycle
+        4 to 5,    // airplane
+        5 to 6,    // bus
+        6 to 7,    // train
+        7 to 8,    // truck
+        8 to 9,    // boat
+        9 to 10,   // traffic light
+        10 to 11,  // fire hydrant
+        11 to 13,  // stop sign
+        12 to 14,  // parking meter
+        13 to 15,  // bench
+        14 to 16,  // bird
+        15 to 17,  // cat
+        16 to 18,  // dog
+        17 to 19,  // horse
+        18 to 20,  // sheep
+        19 to 21,  // cow
+        20 to 22,  // elephant
+        21 to 23,  // bear
+        22 to 24,  // zebra
+        23 to 25,  // giraffe
+        24 to 27,  // backpack
+        25 to 28,  // umbrella
+        26 to 31,  // handbag
+        27 to 32,  // tie
+        28 to 33,  // suitcase
+        29 to 34,  // frisbee
+        30 to 35,  // skis
+        31 to 36,  // snowboard
+        32 to 37,  // sports ball
+        33 to 38,  // kite
+        34 to 39,  // baseball bat
+        35 to 40,  // baseball glove
+        36 to 41,  // skateboard
+        37 to 42,  // surfboard
+        38 to 43,  // tennis racket
+        39 to 44,  // bottle
+        40 to 46,  // wine glass
+        41 to 47,  // cup
+        42 to 48,  // fork
+        43 to 49,  // knife
+        44 to 50,  // spoon
+        45 to 51,  // bowl
+        46 to 52,  // banana
+        47 to 53,  // apple
+        48 to 54,  // sandwich
+        49 to 55,  // orange
+        50 to 56,  // broccoli
+        51 to 57,  // carrot
+        52 to 58,  // hot dog
+        53 to 59,  // pizza
+        54 to 60,  // donut
+        55 to 61,  // cake
+        56 to 62,  // chair
+        57 to 63,  // couch
+        58 to 64,  // potted plant
+        59 to 65,  // bed
+        60 to 67,  // dining table
+        61 to 70,  // toilet
+        62 to 72,  // tv
+        63 to 73,  // laptop
+        64 to 74,  // mouse
+        65 to 75,  // remote
+        66 to 76,  // keyboard
+        67 to 77,  // cell phone
+        68 to 78,  // microwave
+        69 to 79,  // oven
+        70 to 80,  // toaster
+        71 to 81,  // sink
+        72 to 82,  // refrigerator
+        73 to 84,  // book
+        74 to 85,  // clock
+        75 to 86,  // vase
+        76 to 87,  // scissors
+        77 to 88,  // teddy bear
+        78 to 89,  // hair drier
+        79 to 90   // toothbrush
+    )
+    override val exportFileExtension = ".json"
     private val iou = 0.7f
     private val confidence = 0.001f
-    private val inputSize = inputShape[1]
+    private val inputSize:Int by lazy {inputShape[1]}
     private lateinit var resizeRatio: Pair<Float, Float>
     private lateinit var resizePad: Pair<Int, Int>//left,top
     private lateinit var originalImgShape: org.opencv.core.Size
+    private var nmsMaxCandidates  = 30000 //maximum number of detection candidates to apply nms to
+    private var nmsMaxDetections = 300 //maximum number of final detections
+    private var maxWH = 7860 // maximum width/height of the image
+    private var outputSize = 0
+    private val detections = MutableList(nmsMaxDetections) { FloatArray(6) }
+    private val detectionsJSON:MutableList<String> = mutableListOf()
 
-    override fun preprocess(imgPath:String) {
+    override fun <String>preprocess(imgPath:String) {
         val padFillValue = Scalar(114.0, 114.0, 114.0, 0.0)
-        val mat = Imgcodecs.imread(imgPath, Imgcodecs.IMREAD_COLOR)
+        val mat = Imgcodecs.imread(imgPath.toString(), Imgcodecs.IMREAD_COLOR)
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_BGR2RGB)
         originalImgShape = mat.size()
         val r = minOf(inputSize / originalImgShape.width, inputSize / originalImgShape.height).toFloat()
@@ -49,27 +141,48 @@ class YOLO(context: Context) : Model<String>(context) {
         else {
             Core.copyMakeBorder(mat, paddedImg, top, bottom, left, right, Core.BORDER_CONSTANT, padFillValue)
         }
-        paddedImg.convertTo(floatImg, CvType.CV_32F, 1 / 255.0)
+        paddedImg.convertTo(floatImg, CvType.CV_32FC3)
+        Core.divide(floatImg,Scalar(255.0,255.0,255.0),floatImg)
         floatImg.get(0, 0, modelInput)
     }
-    private suspend fun nms(inferenceOutput: FloatArray, output: MutableList<FloatArray>, outputShape: IntArray, maxNMS: Int = 30000, maxWH: Int = 7860, maxDet: Int = 300): Int {
+    override suspend fun postprocess() {
+        nms()
+        scaleBoxesToImage()
+    }
+    override fun inferenceOutputToExportFormat(filename: String) {
+        if (outputSize>0){
+            detectionsJSON.add(detection2JSON(filename))
+        }
+    }
+    override fun serializeResults(): String {
+        return formatJSONForExport()
+    }
+
+    private suspend fun nms() {
         //Variable declaration
-        val outputSize = outputShape[1]
-        val numOutputs = outputShape[2]
-        val reshapedInput = Array(1) { Array(numOutputs) { FloatArray(outputSize) } } //1,8400,84
-        //1D array to [1][84][8400]
-        var chunkSize = inferenceOutput.size / 8
+        val reshapedInput = Array(1) { Array(outputShape[2]) { FloatArray(outputShape[1]) } } //1,8400,84
+        //1D array to [1][8400][84]
+       parallelArrayOperation(modelOutput.size,{ i ->
+            if(i<outputShape[2]*4) {
+                reshapedInput[0][i % outputShape[2]][(i / outputShape[2]) % outputShape[1]] = modelOutput[i] * inputSize.toFloat()
+            }
+            else{
+                reshapedInput[0][i % outputShape[2]][(i / outputShape[2]) % outputShape[1]] = modelOutput[i]
+            }
+        })
+        /*
+        var chunkSize = modelOutput.size / 8
         val jobs = mutableListOf<Job>()
         for (i in 0 until 8) {
             val start = chunkSize * i
             val end = chunkSize * (i + 1)
             val job = CoroutineScope(Dispatchers.Default).launch {
                 for (index in start until end) {
-                    if(index<numOutputs*4) {
-                        reshapedInput[0][index % numOutputs][(index / numOutputs) % outputSize] = inferenceOutput[index] * inputSize
+                    if(index<8400*4) {
+                        reshapedInput[0][index % 8400][(index / 8400) % 84] = modelOutput[index] * inputSize
                     }
                     else{
-                        reshapedInput[0][index % numOutputs][(index / numOutputs) % outputSize] = inferenceOutput[index]
+                        reshapedInput[0][index % 8400][(index / 8400) % 84] = modelOutput[index]
                     }
                 }
             }
@@ -78,13 +191,23 @@ class YOLO(context: Context) : Model<String>(context) {
         for (job in jobs) {
             job.join()
         }
-        jobs.clear()
+        jobs.clear()*/
         //# classes output shape - 4 bbox values
-        val numClasses = outputSize - 4
+        val numClasses = outputShape[1] - 4
         //Unused
         //val numMasks = inferenceOutput.shape[1] - 4 - numClasses
-        val candidates = Array(numOutputs) { false }
-        chunkSize = numOutputs / 8
+        val candidates = Array(outputShape[2]) { false }
+        parallelArrayOperation(outputShape[2],{ i ->
+            var max = -1f
+            for (j in 4 until outputShape[1]) {
+                val value = reshapedInput[0][i][j]
+                if (value > max)
+                    max = value
+            }
+            candidates[i] = max > confidence
+            xywh2xyxy(reshapedInput[0][i])
+        })
+        /*chunkSize = numOutputs / 8
         for (i in 0 until 8) {
             val start = chunkSize * i
             val end = chunkSize * (i + 1)
@@ -105,7 +228,7 @@ class YOLO(context: Context) : Model<String>(context) {
         for (job in jobs) {
             job.join()
         }
-        jobs.clear()
+        jobs.clear()*/
         val x: ArrayList<FloatArray> = ArrayList()
         for (i in candidates.indices) {
             if (candidates[i])
@@ -134,8 +257,8 @@ class YOLO(context: Context) : Model<String>(context) {
             val offset = FloatArray(preds.size) { a -> preds[a][5]*maxWH }
             val numDetections = preds.size
             if (numDetections > 0) {
-                if (numDetections > maxNMS) {
-                    preds.subList(maxNMS, numDetections).clear()
+                if (numDetections > nmsMaxCandidates) {
+                    preds.subList(nmsMaxCandidates, numDetections).clear()
                 }
                 val nmsCand = Array(preds.size) { FloatArray(6) }
                 for (index in preds.indices) {
@@ -146,28 +269,13 @@ class YOLO(context: Context) : Model<String>(context) {
                     nmsCand[index][4] = preds[index][4]
                     nmsCand[index][5] = preds[index][5]
                 }
-                keep = nonMaxSuppression(nmsCand).take(maxDet)
+                keep = nonMaxSuppression(nmsCand).take(nmsMaxDetections)
                 for (index in keep.indices) {
-                    output[index] = preds[keep[index]]
+                    detections[index] = preds[keep[index]]
                 }
             }
         }
-        return keep.size
-    }
-    fun postprocess(inferenceOutput: List<FloatArray>, outputSize: Int, ratio: Pair<Float, Float>, pad: Pair<Int, Int>, ogImgShape: org.opencv.core.Size, ) {
-        val left = pad.first.toFloat()
-        val top = pad.second.toFloat()
-        val width = ogImgShape.width.toFloat()
-        val height = ogImgShape.height.toFloat()
-        val divVal = minOf(ratio.first, ratio.second)
-        for (i in 0 until outputSize) {
-            inferenceOutput[i][0] = ((inferenceOutput[i][0] - left) / divVal).coerceIn(0f, width)
-            inferenceOutput[i][1] = ((inferenceOutput[i][1] - top) / divVal).coerceIn(0f, height)
-            inferenceOutput[i][2] = ((inferenceOutput[i][2] - left) / divVal).coerceIn(0f, width) - inferenceOutput[i][0]
-            inferenceOutput[i][3] = ((inferenceOutput[i][3] - top) / divVal).coerceIn(0f, height) - inferenceOutput[i][1]
-            inferenceOutput[i][4] = inferenceOutput[i][4]
-            inferenceOutput[i][5] = inferenceOutput[i][5]
-        }
+        outputSize = keep.size
     }
     private fun nonMaxSuppression(candidates: Array<FloatArray>): List<Int> {
         val areas = candidates.map { (it[2] - it[0]) * (it[3] - it[1])  }
@@ -197,6 +305,21 @@ class YOLO(context: Context) : Model<String>(context) {
         }
         return keep
     }
+    private fun scaleBoxesToImage() {
+        val left = resizePad.first.toFloat()
+        val top = resizePad.second.toFloat()
+        val width = originalImgShape.width.toFloat()
+        val height = originalImgShape.height.toFloat()
+        val divVal = minOf(resizeRatio.first, resizeRatio.second)
+        for (i in 0 until outputSize) {
+            detections[i][0] = ((detections[i][0] - left) / divVal).coerceIn(0f, width)
+            detections[i][1] = ((detections[i][1] - top) / divVal).coerceIn(0f, height)
+            detections[i][2] = ((detections[i][2] - left) / divVal).coerceIn(0f, width) - detections[i][0]
+            detections[i][3] = ((detections[i][3] - top) / divVal).coerceIn(0f, height) - detections[i][1]
+            detections[i][4] = detections[i][4]
+            detections[i][5] = detections[i][5]
+        }
+    }
     private fun xywh2xyxy(outputCoords: FloatArray) {
         val hw = outputCoords[2] / 2
         val hh = outputCoords[3] / 2
@@ -205,104 +328,25 @@ class YOLO(context: Context) : Model<String>(context) {
         outputCoords[0] -= hw
         outputCoords[1] -= hh
     }
-    private fun coco80to91(eightyClass:Int):Int{
-        val coco80to91: Map<Int, Int> = mapOf(
-            0 to 1,    // person
-            1 to 2,    // bicycle
-            2 to 3,    // car
-            3 to 4,    // motorcycle
-            4 to 5,    // airplane
-            5 to 6,    // bus
-            6 to 7,    // train
-            7 to 8,    // truck
-            8 to 9,    // boat
-            9 to 10,   // traffic light
-            10 to 11,  // fire hydrant
-            11 to 13,  // stop sign
-            12 to 14,  // parking meter
-            13 to 15,  // bench
-            14 to 16,  // bird
-            15 to 17,  // cat
-            16 to 18,  // dog
-            17 to 19,  // horse
-            18 to 20,  // sheep
-            19 to 21,  // cow
-            20 to 22,  // elephant
-            21 to 23,  // bear
-            22 to 24,  // zebra
-            23 to 25,  // giraffe
-            24 to 27,  // backpack
-            25 to 28,  // umbrella
-            26 to 31,  // handbag
-            27 to 32,  // tie
-            28 to 33,  // suitcase
-            29 to 34,  // frisbee
-            30 to 35,  // skis
-            31 to 36,  // snowboard
-            32 to 37,  // sports ball
-            33 to 38,  // kite
-            34 to 39,  // baseball bat
-            35 to 40,  // baseball glove
-            36 to 41,  // skateboard
-            37 to 42,  // surfboard
-            38 to 43,  // tennis racket
-            39 to 44,  // bottle
-            40 to 46,  // wine glass
-            41 to 47,  // cup
-            42 to 48,  // fork
-            43 to 49,  // knife
-            44 to 50,  // spoon
-            45 to 51,  // bowl
-            46 to 52,  // banana
-            47 to 53,  // apple
-            48 to 54,  // sandwich
-            49 to 55,  // orange
-            50 to 56,  // broccoli
-            51 to 57,  // carrot
-            52 to 58,  // hot dog
-            53 to 59,  // pizza
-            54 to 60,  // donut
-            55 to 61,  // cake
-            56 to 62,  // chair
-            57 to 63,  // couch
-            58 to 64,  // potted plant
-            59 to 65,  // bed
-            60 to 67,  // dining table
-            61 to 70,  // toilet
-            62 to 72,  // tv
-            63 to 73,  // laptop
-            64 to 74,  // mouse
-            65 to 75,  // remote
-            66 to 76,  // keyboard
-            67 to 77,  // cell phone
-            68 to 78,  // microwave
-            69 to 79,  // oven
-            70 to 80,  // toaster
-            71 to 81,  // sink
-            72 to 82,  // refrigerator
-            73 to 84,  // book
-            74 to 85,  // clock
-            75 to 86,  // vase
-            76 to 87,  // scissors
-            77 to 88,  // teddy bear
-            78 to 89,  // hair drier
-            79 to 90   // toothbrush
-        )
-        return coco80to91[eightyClass]!!
-    }
-    fun outputToJSON(output: List<FloatArray>, filename: String, outputSize: Int): String {
+
+    private fun detection2JSON(filename: String): String {
         return buildString {
             for (i in 0 until outputSize) {
                 append(String.format(
                     """{"image_id":${filename.substringBeforeLast(".").toInt()},""" +
-                            """"category_id":${coco80to91(output[i][5].toInt())},""" +
-                            """"bbox":[${round(output[i][0]*1e3).toInt()/1e3f},${round(output[i][1]*1e3).toInt()/1e3f},${round(output[i][2]*1e3).toInt()/1e3f},${round(output[i][3]*1e3).toInt()/1e3f}],""" +
-                            """"score":${round(output[i][4]*1e6).toInt()/1e6f}}"""
+                            """"category_id":${coco80to91[detections[i][5].toInt()]},""" +
+                            """"bbox":[${round(detections[i][0]*1e3).toInt()/1e3f},${round(detections[i][1]*1e3).toInt()/1e3f},${round(detections[i][2]*1e3).toInt()/1e3f},${round(detections[i][3]*1e3).toInt()/1e3f}],""" +
+                            """"score":${round(detections[i][4]*1e6).toInt()/1e6f}}"""
                 ))
-                if (i != outputSize - 1) {
+                 if (i != outputSize - 1) {
                     append(",")
                 }
             }
         }
+    }
+    private fun formatJSONForExport():String{
+        detectionsJSON[0] = "["+detectionsJSON[0]
+        detectionsJSON[detectionsJSON.lastIndex] += "]"
+        return detectionsJSON.joinToString(separator = ",")
     }
 }

@@ -1,9 +1,6 @@
 package com.example.models
 
-import com.example.models.Model
-
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Bundle
@@ -17,28 +14,10 @@ import androidx.appcompat.app.AppCompatActivity
 import com.example.models.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
-import org.opencv.core.Core
-import org.opencv.core.CvType
-import org.opencv.core.Mat
-import org.opencv.core.Scalar
-import org.opencv.imgcodecs.Imgcodecs
-import org.opencv.imgproc.Imgproc
-import org.tensorflow.lite.DataType
-import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.InterpreterApi
-import org.tensorflow.lite.Tensor
 import java.io.File
-import java.io.FileInputStream
-import java.lang.Runtime.getRuntime
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.MappedByteBuffer
-import java.nio.channels.FileChannel
-import kotlin.math.round
 import kotlin.time.Duration
 import kotlin.time.measureTime
 
@@ -57,19 +36,12 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val runTime = Array(5000) { Duration.ZERO }
     private val postTime = Array(5000) { Duration.ZERO }
     private val energyConsumption = Array(5000) { 0 }
-
     //private var tfliteInterpreter : Interpreter? = null
     /*private val tfInputSize by lazy {
         val inputIndex = 0
         val inputShape = tflite.getInputTensor(inputIndex).shape()
         Size(inputShape[2], inputShape[1]) // Order of axis is: {1, height, width, 3}
     }*/
-
-    private var selectedDevice = -1
-    private var selectedModel = "No model"
-    //TFLITE aux variables
-    private lateinit var TFLITEInputBuffer : ByteBuffer
-    private lateinit var TFLITEOutputBuffer: ByteBuffer
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         OpenCVLoader.initLocal()
@@ -105,7 +77,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                         interpreter.close()
                     }
                     try {
-                        modelPath = "tflite/$parent.getItemAtPosition(position).toString()"
+                        modelPath = "tflite/${parent.getItemAtPosition(position)}"
                         isModelSelected=true
                         model.loadModelFile(modelPath)
                     } catch (e: Exception) {
@@ -113,9 +85,9 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                     }
                 }
                 activityMainBinding.device.id -> {
-                    selectedDevice = position - 1
+                    interpreter.selectExecutionDevice(position - 1)
                     try{
-                        interpreter.initializeOptions(position)
+                        interpreter.initializeOptions()
                         //activityMainBinding.datatypeText.text = dataType.toString()
                         isDeviceSelected=true
                     }
@@ -135,6 +107,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         activityMainBinding.button.setOnClickListener {
             CoroutineScope(Dispatchers.Default).launch {
                 interpreter.initializeInterpreter(model)
+                model.initializeIO()
                 validate()
             }
             activityMainBinding.button.isEnabled = false
@@ -151,63 +124,43 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         //}
         activityMainBinding.modelSelector.onItemSelectedListener = this
         activityMainBinding.device.onItemSelectedListener = this
-        //activityMainBinding.modelSelector.setSelection(-1)
-        //activityMainBinding.device.setSelection(-1)
     }
-
-    @SuppressLint("DefaultLocale")
     private suspend fun validate() {
         val datasetChunk = 5000
-        val json: MutableList<String> = mutableListOf()
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
         val imgList = File(datasetPath).list()?.sorted()
         var info: String
-        val output: MutableList<FloatArray> = MutableList(300) { FloatArray(6) }
-        var outputSize : Int
         var tik : Int
         var tok : Int
         var pre: Duration
         var run : Duration
         var post : Duration
+        val outputDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
         Log.i(TAG,"Starting benchmark...")
         if (imgList != null) {
-            for ((i, file) in imgList.take(datasetChunk).withIndex()) {
+            for ((i, filename) in imgList.take(datasetChunk).withIndex()) {
                 pre = measureTime {
-                    model.preprocess()
-                    "$datasetPath/$file"
+                    model.preprocess("$datasetPath/$filename")
                     if(interpreter.isInputQuantized()){
-                        quantize(model.getModelInput(),interpreter.getInputQuant())
-                        //for (index in inputBuffer.indices){
-                            //inputBuffer[index] = inputBuffer[index] / inputQuant.scale + inputQuant.zeroPoint
-                        //}
+                        quantize(model.modelInput,interpreter.getInputQuant())
                     }
-                    array2Buffer(TFLITEInputBuffer,model.getModelInput(),interpreter.getInputDatatype())
-                    //TFLITEInputBuffer.put(inputBuffer)//TensorBuffer.loadArray() ya clampea a [0,255]
+                    array2Buffer(model.modelInput,interpreter.getInputBuffer(),interpreter.getInputDatatype())
                 }
                 run = measureTime {
                     //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                    interpreter.run(TFLITEInputBuffer, TFLITEOutputBuffer)
+                    interpreter.run(interpreter.getInputBuffer(), interpreter.getOutputBuffer())
                     //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-
                 }
                 post = measureTime {
-                    TFLITEOutputBuffer.rewind()
-                    buffer2Array(TFLITEOutputBuffer,modelOutput,interpreter.getOutputDatatype())
+                    buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
                     if(interpreter.isOutputQuantized()){
-                        dequantize(modelOutput,interpreter.getOutputQuant())
-                        //for (index in outputBuffer.indices){
-                            //outputBuffer[index] = (outputBuffer[index] - outputQuant.zeroPoint) * outputQuant.scale
-                        //}
+                        dequantize(model.modelOutput,interpreter.getOutputQuant())
                     }
-                    outputSize=nms(modelOutput, output, outputShape)
-                    postprocess(output, outputSize, preprocessResult.ratio, preprocessResult.pad, preprocessResult.ogImgShape)
+                    model.postprocess()
                 }
-                TFLITEInputBuffer.clear()
-                TFLITEOutputBuffer.clear()
-                if(outputSize!=0){
-                    json.add(outputToJSON(output, file,outputSize))
-                }
-                energyConsumption[i] = tok-tik
+                interpreter.clearIOBuffers()
+                model.inferenceOutputToExportFormat(filename)
+                //energyConsumption[i] = tok-tik
                 preTime[i]=pre
                 //activityMainBinding.preTimeVal.text=pre.toString()
                 runTime[i]=run
@@ -221,9 +174,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                 }
             }
         }
-        json[0] = "["+json[0]
-        json[json.size - 1]=json[json.size - 1]+"]"
-        writeOutput(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),selectedModel + "_" + devices[selectedDevice]!!.replace(" ","_") + "_" + "output.json", json)
+        writeOutputToFile(outputDir,"${modelPath.split("/").last().split(".").first()}_${interpreter.executingDevice}_${model.exportFileExtension}",model.serializeResults())
         val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/datasetChunk
         val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/datasetChunk
         val postTimeVal = postTime.reduce { acc, duration -> acc + duration }/datasetChunk
@@ -237,22 +188,25 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             activityMainBinding.button.isEnabled = true
         }
     }
-    private fun writeOutput(path : File, name :String, json:MutableList<String>){
+    public override fun onDestroy() {
+        interpreter.close()
+        super.onDestroy()
+    }
+    fun writeOutputToFile(path : File, filename :String, content: String){
         val dirName = "InferenceResult"
-        val newPath =File(path,dirName)
+        val newPath = File(path,dirName)
         if (!File(path,dirName).exists()){
             newPath.mkdirs()
         }
-        val text = json.joinToString(separator = ",")
-        val file  = File(newPath,name)
+        val file  = File(newPath,filename)
         try {
             if(file.exists()){
                 file.delete()
             }
             //file.createNewFile()
             Log.i("FileWrite","Writing output to file...")
-            file.writeText(text)
-            if(file.readText()!=text){
+            file.writeText(content)
+            if(file.readText()!=content){
                 throw Exception("Error writing output to file, text mismatch")
             }
             //file.outputStream().write(text.toByteArray(Charsets.UTF_8))
@@ -260,15 +214,10 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             //file.outputStream().close()
         }
         catch (e:Exception) {
-            Log.e("FileWrite", "Output to file failed" + e.toString())
+            Log.e("FileWrite", "Output to file failed $e")
             throw(e)
         }
         Log.i("FileWrite","Output written to file successfully.")
     }
-    public override fun onDestroy() {
-        interpreter.close()
-        super.onDestroy()
-    }
-
 
 }
