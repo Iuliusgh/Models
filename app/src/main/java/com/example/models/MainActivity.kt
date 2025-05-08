@@ -2,7 +2,6 @@ package com.example.models
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.os.BatteryManager
 import android.os.Bundle
 import android.os.Environment
 import android.util.Log
@@ -25,15 +24,15 @@ import kotlin.time.measureTime
 class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val TAG = "Main"
     private lateinit var activityMainBinding: ActivityMainBinding
-    private val model = YOLO(this)
+    private val model = ResNet(this)
     private val interpreter = Interpreter(this)
     private var modelPath =""
-    private val datasetPath = "/storage/emulated/0/Dataset/coco/val2017"
+    private val datasetPath = "/storage/emulated/0/Dataset/Imagenet/archive"
     private var isModelSelected = false
     private var isDeviceSelected = false
     private val placeholder = listOf("---")
     private val preTime = Array(5000) { Duration.ZERO }
-    private val runTime = Array(5000) { Duration.ZERO }
+    private val runTime = LongArray(5000)
     private val postTime = Array(5000) { Duration.ZERO }
     private val energyConsumption = Array(5000) { 0 }
     //private var tfliteInterpreter : Interpreter? = null
@@ -126,14 +125,13 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         activityMainBinding.device.onItemSelectedListener = this
     }
     private suspend fun validate() {
-        val datasetChunk = 5000
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-        val imgList = File(datasetPath).list()?.sorted()
-        var info: String
+        val imgList = File(datasetPath).walkTopDown().filter{it.extension == "jpg"}.map { it.absolutePath }.toList().sorted()
+        val datasetChunk = imgList.size
+        var info = 0.0
         var tik : Int
         var tok : Int
         var pre: Duration
-        var run : Duration
         var post : Duration
         val outputDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
         Log.i(TAG,"Starting benchmark...")
@@ -145,12 +143,11 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                         quantize(model.modelInput,interpreter.getInputQuant())
                     }
                     array2Buffer(model.modelInput,interpreter.getInputBuffer(),interpreter.getInputDatatype())
+
                 }
-                run = measureTime {
-                    //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                    interpreter.run(interpreter.getInputBuffer(), interpreter.getOutputBuffer())
-                    //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                }
+                //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+                interpreter.run()
+                //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
                 post = measureTime {
                     buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
                     if(interpreter.isOutputQuantized()){
@@ -159,15 +156,15 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                     model.postprocess()
                 }
                 interpreter.clearIOBuffers()
-                model.inferenceOutputToExportFormat(filename)
+                model.inferenceOutputToExportFormat()
                 //energyConsumption[i] = tok-tik
-                preTime[i]=pre
+                //preTime[i]=pre
                 //activityMainBinding.preTimeVal.text=pre.toString()
-                runTime[i]=run
+                //runTime[i] = interpreter.getInferenceTimeNanoseconds()
                 //activityMainBinding.runTimeVal.text=run.toString()
-                postTime[i]=post
+                //postTime[i]=post
                //activityMainBinding.postTimeVal.text=post.toString()
-                info = (i.toFloat() / datasetChunk * 100f).toString()
+                info = (i.toFloat() / datasetChunk * 1e2)
                 withContext(Dispatchers.Main) {
                     activityMainBinding.progress.text = "Progress: $info %"
                     //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
@@ -176,7 +173,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         }
         writeOutputToFile(outputDir,"${modelPath.split("/").last().split(".").first()}_${interpreter.executingDevice}_${model.exportFileExtension}",model.serializeResults())
         val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/datasetChunk
-        val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/datasetChunk
+        val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
         val postTimeVal = postTime.reduce { acc, duration -> acc + duration }/datasetChunk
         val energyVal = (energyConsumption.reduce { acc, l -> acc + l }).toFloat()/datasetChunk
         withContext(Dispatchers.Main) {

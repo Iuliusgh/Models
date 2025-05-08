@@ -1,20 +1,13 @@
 package com.example.models
 
 import android.content.Context
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Scalar
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
-import java.io.File
 import kotlin.math.round
-import kotlin.properties.Delegates
 
 class YOLO(context: Context) : Model(context) {
     private val coco80to91: Map<Int, Int> = mapOf(
@@ -103,27 +96,27 @@ class YOLO(context: Context) : Model(context) {
     private val iou = 0.7f
     private val confidence = 0.001f
     private val inputSize:Int by lazy {inputShape[1]}
+    private val padFillValue = Scalar(114.0, 114.0, 114.0, 0.0)
     private lateinit var resizeRatio: Pair<Float, Float>
     private lateinit var resizePad: Pair<Int, Int>//left,top
     private lateinit var originalImgShape: org.opencv.core.Size
     private var nmsMaxCandidates  = 30000 //maximum number of detection candidates to apply nms to
     private var nmsMaxDetections = 300 //maximum number of final detections
     private var maxWH = 7860 // maximum width/height of the image
+    private val nmsReshapedInput  by lazy { Array(1) { Array(outputShape[2]) { FloatArray(outputShape[1]) }}}//1,8400,84
     private var outputSize = 0
     private val detections = MutableList(nmsMaxDetections) { FloatArray(6) }
     private val detectionsJSON:MutableList<String> = mutableListOf()
+    private var inputFilename: String = ""
 
     override fun <String>preprocess(imgPath:String) {
-        val padFillValue = Scalar(114.0, 114.0, 114.0, 0.0)
+        inputFilename = imgPath.toString().split("/").last()
         val mat = Imgcodecs.imread(imgPath.toString(), Imgcodecs.IMREAD_COLOR)
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_BGR2RGB)
         originalImgShape = mat.size()
         val r = minOf(inputSize / originalImgShape.width, inputSize / originalImgShape.height).toFloat()
         resizeRatio = Pair(r, r)
-        val newShape = org.opencv.core.Size(
-            round(originalImgShape.width * r),
-            round(originalImgShape.height * r)
-        )
+        val newShape = org.opencv.core.Size(round(originalImgShape.width * r), round(originalImgShape.height * r))
         val wpad = (inputSize - newShape.width) / 2
         val hpad = (inputSize - newShape.height) / 2
         val top = round(hpad - 0.1).toInt()
@@ -149,9 +142,9 @@ class YOLO(context: Context) : Model(context) {
         nms()
         scaleBoxesToImage()
     }
-    override fun inferenceOutputToExportFormat(filename: String) {
+    override fun inferenceOutputToExportFormat() {
         if (outputSize>0){
-            detectionsJSON.add(detection2JSON(filename))
+            detectionsJSON.add(detection2JSON(inputFilename))
         }
     }
     override fun serializeResults(): String {
@@ -160,79 +153,35 @@ class YOLO(context: Context) : Model(context) {
 
     private suspend fun nms() {
         //Variable declaration
-        val reshapedInput = Array(1) { Array(outputShape[2]) { FloatArray(outputShape[1]) } } //1,8400,84
+
         //1D array to [1][8400][84]
        parallelArrayOperation(modelOutput.size,{ i ->
             if(i<outputShape[2]*4) {
-                reshapedInput[0][i % outputShape[2]][(i / outputShape[2]) % outputShape[1]] = modelOutput[i] * inputSize.toFloat()
+                nmsReshapedInput[0][i % outputShape[2]][(i / outputShape[2]) % outputShape[1]] = modelOutput[i] * inputSize.toFloat()
             }
             else{
-                reshapedInput[0][i % outputShape[2]][(i / outputShape[2]) % outputShape[1]] = modelOutput[i]
+                nmsReshapedInput[0][i % outputShape[2]][(i / outputShape[2]) % outputShape[1]] = modelOutput[i]
             }
         })
-        /*
-        var chunkSize = modelOutput.size / 8
-        val jobs = mutableListOf<Job>()
-        for (i in 0 until 8) {
-            val start = chunkSize * i
-            val end = chunkSize * (i + 1)
-            val job = CoroutineScope(Dispatchers.Default).launch {
-                for (index in start until end) {
-                    if(index<8400*4) {
-                        reshapedInput[0][index % 8400][(index / 8400) % 84] = modelOutput[index] * inputSize
-                    }
-                    else{
-                        reshapedInput[0][index % 8400][(index / 8400) % 84] = modelOutput[index]
-                    }
-                }
-            }
-            jobs.add(job)
-        }
-        for (job in jobs) {
-            job.join()
-        }
-        jobs.clear()*/
         //# classes output shape - 4 bbox values
         val numClasses = outputShape[1] - 4
         //Unused
         //val numMasks = inferenceOutput.shape[1] - 4 - numClasses
         val candidates = Array(outputShape[2]) { false }
         parallelArrayOperation(outputShape[2],{ i ->
-            var max = -1f
+            var max = 0f
             for (j in 4 until outputShape[1]) {
-                val value = reshapedInput[0][i][j]
+                val value = nmsReshapedInput[0][i][j]
                 if (value > max)
                     max = value
             }
             candidates[i] = max > confidence
-            xywh2xyxy(reshapedInput[0][i])
+            xywh2xyxy(nmsReshapedInput[0][i])
         })
-        /*chunkSize = numOutputs / 8
-        for (i in 0 until 8) {
-            val start = chunkSize * i
-            val end = chunkSize * (i + 1)
-            val job = CoroutineScope(Dispatchers.Default).launch {
-                for (index in start until end) {
-                    var max = 0f
-                    for (j in 4 until outputSize) {
-                        val value = reshapedInput[0][index][j]
-                        if (value > max)
-                            max = value
-                    }
-                    candidates[index] = max > confidence
-                    xywh2xyxy(reshapedInput[0][index])
-                }
-            }
-            jobs.add(job)
-        }
-        for (job in jobs) {
-            job.join()
-        }
-        jobs.clear()*/
         val x: ArrayList<FloatArray> = ArrayList()
         for (i in candidates.indices) {
             if (candidates[i])
-                x.add(reshapedInput[0][i])
+                x.add(nmsReshapedInput[0][i])
         }
         var keep:List<Int> = emptyList()
         if (x.isNotEmpty()) {

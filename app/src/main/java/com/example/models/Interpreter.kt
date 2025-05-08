@@ -158,8 +158,8 @@ class Interpreter (private val context: Context){
         liteRTInterpreter.close()
         initialized=false
     }
-    fun run(input:ByteBuffer,output:ByteBuffer){
-        liteRTInterpreter.run(input,output)
+    fun run(){
+        liteRTInterpreter.run(inputBuffer,outputBuffer)
     }
     fun selectExecutionDevice(device:Int){
         executingDevice=deviceList[device]
@@ -191,6 +191,9 @@ class Interpreter (private val context: Context){
     fun clearIOBuffers(){
         inputBuffer.clear()
         outputBuffer.clear()
+    }
+    fun getInferenceTimeNanoseconds():Long{
+        return liteRTInterpreter.lastNativeInferenceDurationNanoseconds
     }
 }
 

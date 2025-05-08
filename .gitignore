@@ -14,5 +14,6 @@
 .cxx
 local.properties
 /app/dataset
-/opencv/
+opencv
 /app/src/main/ml/
+.idea
