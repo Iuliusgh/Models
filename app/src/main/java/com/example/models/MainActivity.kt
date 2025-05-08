@@ -27,7 +27,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val model = ResNet(this)
     private val interpreter = Interpreter(this)
     private var modelPath =""
-    private val datasetPath = "/storage/emulated/0/Dataset/coco/val2017"
+    private val datasetPath = "/storage/emulated/0/Dataset/Imagenet/archive"
     private var isModelSelected = false
     private var isDeviceSelected = false
     private val placeholder = listOf("---")
@@ -125,9 +125,9 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         activityMainBinding.device.onItemSelectedListener = this
     }
     private suspend fun validate() {
-        val datasetChunk = 10
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-        val imgList = File(datasetPath).list()?.sorted()
+        val imgList = File(datasetPath).walkTopDown().filter{it.extension == "jpg"}.map { it.absolutePath }.toList().sorted()
+        val datasetChunk = imgList.size
         var info = 0.0
         var tik : Int
         var tok : Int
@@ -135,10 +135,10 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         var post : Duration
         val outputDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
         Log.i(TAG,"Starting benchmark...")
-        //if (imgList != null) {
-            //for ((i, filename) in imgList.take(datasetChunk).withIndex()) {
+        if (imgList != null) {
+            for ((i, filename) in imgList.take(datasetChunk).withIndex()) {
                 pre = measureTime {
-                    model.preprocess(assets."dog.jpg")//"$datasetPath/$filename")
+                    model.preprocess("$datasetPath/$filename")
                     if(interpreter.isInputQuantized()){
                         quantize(model.modelInput,interpreter.getInputQuant())
                     }
@@ -156,7 +156,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                     model.postprocess()
                 }
                 interpreter.clearIOBuffers()
-                //model.inferenceOutputToExportFormat(filename)
+                model.inferenceOutputToExportFormat()
                 //energyConsumption[i] = tok-tik
                 //preTime[i]=pre
                 //activityMainBinding.preTimeVal.text=pre.toString()
@@ -164,13 +164,13 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                 //activityMainBinding.runTimeVal.text=run.toString()
                 //postTime[i]=post
                //activityMainBinding.postTimeVal.text=post.toString()
-                //info = (i.toFloat() / datasetChunk * 1e2)
+                info = (i.toFloat() / datasetChunk * 1e2)
                 withContext(Dispatchers.Main) {
                     activityMainBinding.progress.text = "Progress: $info %"
                     //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
                 }
-            //}
-        //}
+            }
+        }
         writeOutputToFile(outputDir,"${modelPath.split("/").last().split(".").first()}_${interpreter.executingDevice}_${model.exportFileExtension}",model.serializeResults())
         val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/datasetChunk
         val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
