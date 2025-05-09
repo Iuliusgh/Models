@@ -1,8 +1,6 @@
 <resources>
     <string name="app_name">Models</string>
-    <string-array name="available_interpreters">
-        <item></item>
-        <item>LiteRT</item>
-        <item>SNPE</item>
-    </string-array>
+    <string name="starting">Starting benchmark… </string>
+    <string name="progress">Progress: %.2f %%</string>
+    <string name="completed">Completed! </string>
 </resources>

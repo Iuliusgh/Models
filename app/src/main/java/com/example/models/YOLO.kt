@@ -92,6 +92,7 @@ class YOLO(context: Context) : Model(context) {
         78 to 89,  // hair drier
         79 to 90   // toothbrush
     )
+    override val datasetPath: String = super.datasetPath + "coco/val2017"
     override val exportFileExtension = ".json"
     private val iou = 0.7f
     private val confidence = 0.001f
@@ -298,4 +299,8 @@ class YOLO(context: Context) : Model(context) {
         detectionsJSON[detectionsJSON.lastIndex] += "]"
         return detectionsJSON.joinToString(separator = ",")
     }
+    override fun clearResultList() {
+        detectionsJSON.clear()
+    }
+
 }

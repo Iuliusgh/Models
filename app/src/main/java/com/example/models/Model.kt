@@ -10,12 +10,15 @@ import java.nio.channels.FileChannel
 open class Model(private val context: Context):ModelInterface {
     private val TAG = "Model"
     private var loaded = false
+    open val datasetPath:String = "/storage/emulated/0/Dataset/"
     open val exportFileExtension:String = ""
     private lateinit var modelBuffer:MappedByteBuffer
     protected lateinit var inputShape:IntArray
     protected lateinit var outputShape:IntArray
     lateinit var modelInput :FloatArray
     lateinit var modelOutput :FloatArray
+    private lateinit var modelName:String
+    private val timeFileExtension = ".csv"
 
     fun loadModelFile(path:String) {
         loaded = false
@@ -43,5 +46,8 @@ open class Model(private val context: Context):ModelInterface {
     fun initializeIO(){
         modelInput = FloatArray(inputShape.reduce{acc,i -> acc * i})
         modelOutput = FloatArray(outputShape.reduce{acc,i -> acc * i})
+    }
+    fun getTimeFileExtension():String{
+        return timeFileExtension
     }
 }

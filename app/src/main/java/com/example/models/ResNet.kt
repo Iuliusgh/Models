@@ -15,8 +15,10 @@ class ResNet(context:Context): Model(context) {
     private lateinit var originalImgShape: Size
     private val resizeSize = 256
     private val cropSize = 224
-    private val classificationsArray:MutableList<String> = mutableListOf()
+    private val classificationResultList:MutableList<IntArray> = mutableListOf()
+    override val datasetPath: String = super.datasetPath + "Imagenet/archive"
     override val exportFileExtension: String = ".csv"
+    private val k = 5 // # of top results to take
 
     override fun <String> preprocess(imgPath:String) {
         val mat = Imgcodecs.imread(imgPath.toString(), Imgcodecs.IMREAD_COLOR)
@@ -39,10 +41,14 @@ class ResNet(context:Context): Model(context) {
 
 
     override fun serializeResults(): String {
-        return classificationsArray.joinToString(separator = ",")
+        return classificationResultList.joinToString(separator = ";"){ array -> array.joinToString(separator = ",")}
     }
 
     override fun inferenceOutputToExportFormat() {
-        classificationsArray.add(modelOutput.withIndex().maxBy { it.value }.index.toString())
+        classificationResultList.add(modelOutput.withIndex().sortedByDescending { it.value }.take(k).map { it.index }.toIntArray())
+    }
+
+    override fun clearResultList() {
+        classificationResultList.clear()
     }
 }

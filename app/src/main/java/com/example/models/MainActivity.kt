@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
 import java.io.File
+import kotlin.math.floor
 import kotlin.time.Duration
 import kotlin.time.measureTime
 
@@ -27,29 +28,25 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val model = ResNet(this)
     private val interpreter = Interpreter(this)
     private var modelPath =""
-    private val datasetPath = "/storage/emulated/0/Dataset/Imagenet/archive"
     private var isModelSelected = false
     private var isDeviceSelected = false
     private val placeholder = listOf("---")
-    private val preTime = Array(5000) { Duration.ZERO }
-    private val runTime = LongArray(5000)
-    private val postTime = Array(5000) { Duration.ZERO }
+    private val preTime:MutableList<Duration>  = mutableListOf()
+    private val runTime:MutableList<Long>  = mutableListOf()
+    private val postTime:MutableList<Duration>  = mutableListOf()
     private val energyConsumption = Array(5000) { 0 }
-    //private var tfliteInterpreter : Interpreter? = null
-    /*private val tfInputSize by lazy {
-        val inputIndex = 0
-        val inputShape = tflite.getInputTensor(inputIndex).shape()
-        Size(inputShape[2], inputShape[1]) // Order of axis is: {1, height, width, 3}
-    }*/
+    private val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         OpenCVLoader.initLocal()
         activityMainBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(activityMainBinding.root)
-        initUI()
         if (checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.READ_MEDIA_IMAGES), 0)
         }
+        initUI()
         /*
         val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
         // Get current battery level in percentage
@@ -110,6 +107,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                 validate()
             }
             activityMainBinding.button.isEnabled = false
+            activityMainBinding.progress.text = getString(R.string.starting)
         }
         //Fill the spinner with the available interpreters
         val modelDir = placeholder + assets.list("tflite")!!.toList()//File(,"tflite").listFiles()//!!.map{it.name}
@@ -126,62 +124,68 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     }
     private suspend fun validate() {
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-        val imgList = File(datasetPath).walkTopDown().filter{it.extension == "jpg"}.map { it.absolutePath }.toList().sorted()
+        Log.i(TAG,"Listing validation dataset...")
+        val imgList = File(model.datasetPath).walkTopDown().filter{it.extension == "jpg"}.map { it.absolutePath }.toList().sorted()
+        Log.i(TAG,"Finished listing.")
         val datasetChunk = imgList.size
-        var info = 0.0
+        var info : Float = 0f
         var tik : Int
         var tok : Int
         var pre: Duration
         var post : Duration
-        val outputDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-        Log.i(TAG,"Starting benchmark...")
-        if (imgList != null) {
-            for ((i, filename) in imgList.take(datasetChunk).withIndex()) {
-                pre = measureTime {
-                    model.preprocess("$datasetPath/$filename")
-                    if(interpreter.isInputQuantized()){
-                        quantize(model.modelInput,interpreter.getInputQuant())
+        if(checkResultDirectories()){
+            Log.i(TAG,"Starting benchmark...")
+            model.clearResultList()
+            if (imgList != null) {
+                for ((i, filename) in imgList.take(datasetChunk).withIndex()) {
+                    pre = measureTime {
+                        model.preprocess(filename)
+                        if(interpreter.isInputQuantized()){
+                            quantize(model.modelInput,interpreter.getInputQuant())
+                        }
+                        array2Buffer(model.modelInput,interpreter.getInputBuffer(),interpreter.getInputDatatype())
                     }
-                    array2Buffer(model.modelInput,interpreter.getInputBuffer(),interpreter.getInputDatatype())
-
-                }
-                //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                interpreter.run()
-                //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                post = measureTime {
-                    buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
-                    if(interpreter.isOutputQuantized()){
-                        dequantize(model.modelOutput,interpreter.getOutputQuant())
+                    //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+                    interpreter.run()
+                    //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+                    post = measureTime {
+                        buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
+                        if(interpreter.isOutputQuantized()){
+                            dequantize(model.modelOutput,interpreter.getOutputQuant())
+                        }
+                        model.postprocess()
                     }
-                    model.postprocess()
-                }
-                interpreter.clearIOBuffers()
-                model.inferenceOutputToExportFormat()
-                //energyConsumption[i] = tok-tik
-                //preTime[i]=pre
-                //activityMainBinding.preTimeVal.text=pre.toString()
-                //runTime[i] = interpreter.getInferenceTimeNanoseconds()
-                //activityMainBinding.runTimeVal.text=run.toString()
-                //postTime[i]=post
-               //activityMainBinding.postTimeVal.text=post.toString()
-                info = (i.toFloat() / datasetChunk * 1e2)
-                withContext(Dispatchers.Main) {
-                    activityMainBinding.progress.text = "Progress: $info %"
-                    //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
+                    interpreter.clearIOBuffers()
+                    model.inferenceOutputToExportFormat()
+                    //energyConsumption[i] = tok-tik
+                    preTime.add(pre)
+                    //activityMainBinding.preTimeVal.text=pre.toString()
+                    runTime.add(interpreter.getInferenceTimeNanoseconds())
+                    //activityMainBinding.runTimeVal.text=run.toString()
+                    postTime.add(post)
+                    //activityMainBinding.postTimeVal.text=post.toString()
+                    info = (i.toFloat() / datasetChunk * 1e2f)
+                    val progressText = getString(R.string.progress,info)
+                    withContext(Dispatchers.Main) {
+                        activityMainBinding.progress.text = progressText
+                        //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
+                    }
                 }
             }
         }
-        writeOutputToFile(outputDir,"${modelPath.split("/").last().split(".").first()}_${interpreter.executingDevice}_${model.exportFileExtension}",model.serializeResults())
+        writeOutputToFile("${modelPath.split("/").last().split(".").first()}_${interpreter.executingDevice}${model.exportFileExtension}",model.serializeResults())
         val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/datasetChunk
         val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
         val postTimeVal = postTime.reduce { acc, duration -> acc + duration }/datasetChunk
-        val energyVal = (energyConsumption.reduce { acc, l -> acc + l }).toFloat()/datasetChunk
+        //val energyVal = (energyConsumption.reduce { acc, l -> acc + l }).toFloat()/datasetChunk
+        val time = "$preTimeVal;$runTimeVal;$postTimeVal"
+        writeTimeToFile("${modelPath.split("/").last().split(".").first()}_${interpreter.executingDevice}${model.getTimeFileExtension()}",time)
         withContext(Dispatchers.Main) {
-            activityMainBinding.progress.text = "Completed"
-            activityMainBinding.preTimeVal.text="AVG: ${preTimeVal}"
-            activityMainBinding.runTimeVal.text="AVG: ${runTimeVal}"
-            activityMainBinding.postTimeVal.text="AVG: ${postTimeVal}"
-            activityMainBinding.energyVal.text="AVG: ${energyVal} uAh"
+            activityMainBinding.progress.text = getString(R.string.completed)
+            //activityMainBinding.preTimeVal.text="AVG: ${preTimeVal}"
+            //activityMainBinding.runTimeVal.text="AVG: ${runTimeVal}"
+            //activityMainBinding.postTimeVal.text="AVG: ${postTimeVal}"
+            //activityMainBinding.energyVal.text="AVG: ${energyVal} uAh"
             activityMainBinding.button.isEnabled = true
         }
     }
@@ -189,18 +193,15 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         interpreter.close()
         super.onDestroy()
     }
-    fun writeOutputToFile(path : File, filename :String, content: String){
-        val dirName = "InferenceResult"
-        val newPath = File(path,dirName)
-        if (!File(path,dirName).exists()){
-            newPath.mkdirs()
-        }
-        val file  = File(newPath,filename)
+    private fun writeOutputToFile(filename :String, content: String){
+        val dirName = "Results/InferenceResult"
+        val dir = File(documentsDir,dirName)
+        val file  = File(dir,filename)
         try {
             if(file.exists()){
                 file.delete()
             }
-            //file.createNewFile()
+            file.createNewFile()
             Log.i("FileWrite","Writing output to file...")
             file.writeText(content)
             if(file.readText()!=content){
@@ -211,10 +212,81 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             //file.outputStream().close()
         }
         catch (e:Exception) {
-            Log.e("FileWrite", "Output to file failed $e")
+            Log.e("FileWrite", "Writing output to file failed $e")
             throw(e)
         }
         Log.i("FileWrite","Output written to file successfully.")
     }
-
+    private fun writeTimeToFile(filename: String,content: String){
+        val dirName = "Results/TimeBenchmark"
+        val dir = File(documentsDir,dirName)
+        val file = File(dir,filename)
+        try {
+            if(file.exists()){
+                file.delete()
+            }
+            Log.i("FileWrite","Writing time to file...")
+            file.writeText(content)
+            if(file.readText()!=content){
+                throw Exception("Error writing time to file, text mismatch")
+            }
+        }
+        catch (e:Exception) {
+            Log.e("FileWrite", "Writing time to file failed $e")
+            throw(e)
+        }
+        Log.i("FileWrite","Time written to file successfully.")
+    }
+    private fun checkResultDirectories():Boolean{
+        var ret = true
+        val resultsDir = File(documentsDir,"Results")
+        val dirList = listOf("InferenceResult","TimeBenchmark")
+        Log.i(TAG,"Checking result directory status...")
+        if(!resultsDir.exists()){
+            Log.i(TAG,"Results directory missing, creating...")
+            if(resultsDir.mkdirs()) {
+                Log.i(TAG, "Results directory created successfully, creating subdirectories...")
+                for(dir in dirList){
+                    val newDir = File(resultsDir,dir)
+                    if(!newDir.exists()){
+                        Log.i(TAG,"Subdirectory $dir missing. Creating...")
+                        if(newDir.mkdirs()){
+                            Log.i(TAG,"Directory $dir created successfully.")
+                        }
+                        else{
+                            Log.e(TAG,"Error creating directory $dir.")
+                            ret =  false
+                        }
+                    }
+                    else{
+                        Log.i(TAG,"Directory $dir already exists.")
+                    }
+                }
+            }
+            else{
+                Log.e(TAG,"Error creating results directory.")
+                ret = false
+            }
+        }
+        else{
+            Log.i(TAG,"Results directory already exists. Checking subdirectories...")
+            for(dir in dirList){
+                val newDir = File(resultsDir,dir)
+                if(!newDir.exists()){
+                    Log.i(TAG,"Subdirectory $dir missing. Creating...")
+                    if(newDir.mkdirs()){
+                        Log.i(TAG,"Directory $dir created successfully.")
+                    }
+                    else{
+                        Log.e(TAG,"Error creating directory $dir.")
+                        ret = false
+                    }
+                }
+                else{
+                    Log.i(TAG,"Directory $dir already exists.")
+                }
+            }
+        }
+     return ret
+    }
 }
