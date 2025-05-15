@@ -4,16 +4,16 @@ package com.example.models.ui.theme
 
 /*
 
-class ObjectDetector(private val tflite: Interpreter, private val labels: List<String>) {
+class ObjectDetector(private val yolov11n: Interpreter, private val labels: List<String>) {
 
-    private val ROW_SIZE = tflite.getOutputTensor(0).shape()[1]//4 coord numbers (x_center,y_center,width,height) + #classes
+    private val ROW_SIZE = yolov11n.getOutputTensor(0).shape()[1]//4 coord numbers (x_center,y_center,width,height) + #classes
     private val CLASS_OFFSET = ROW_SIZE - labels.size
     private  var maxConfIndex : Int = -1
 
-    private val outputBuffer = TensorBuffer.createFixedSize(tflite.getOutputTensor(0).shape(),tflite.getOutputTensor(0).dataType())
+    private val outputBuffer = TensorBuffer.createFixedSize(yolov11n.getOutputTensor(0).shape(),yolov11n.getOutputTensor(0).dataType())
     lateinit var floatBuffer : FloatArray
 
-    private val detections : List<Detection> get() = (0 until tflite.getOutputTensor(0).shape()[2]).map{
+    private val detections : List<Detection> get() = (0 until yolov11n.getOutputTensor(0).shape()[2]).map{
         Detection.create(
             outputToRectF(it*ROW_SIZE),
             listOf(Category(indexToLabel(),outputToScore(it*ROW_SIZE+CLASS_OFFSET)))
@@ -35,7 +35,7 @@ class ObjectDetector(private val tflite: Interpreter, private val labels: List<S
         return if (maxConfIndex>0)classConfValues[maxConfIndex] else 0f
     }
     fun detect(image: TensorImage): List<Detection> {
-        tflite.run(image.buffer, outputBuffer.buffer)
+        yolov11n.run(image.buffer, outputBuffer.buffer)
         floatBuffer= outputBuffer.floatArray.map { it/255f }.toFloatArray()
         //val aux =outputBuffer.buffer
         return detections

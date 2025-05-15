@@ -92,7 +92,8 @@ class YOLO(context: Context) : Model(context) {
         78 to 89,  // hair drier
         79 to 90   // toothbrush
     )
-    override val datasetPath: String = super.datasetPath + "coco/val2017"
+    override val datasetPaths: String = super.datasetPaths + "CocoPaths.txt"
+    override val modelRootDir: String = super.modelRootDir + "YOLO/"
     override val exportFileExtension = ".json"
     private val iou = 0.7f
     private val confidence = 0.001f

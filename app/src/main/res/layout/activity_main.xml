@@ -5,64 +5,88 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <Button
-        android:id="@+id/button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Start"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/modelSelectorText"
-        android:enabled="false"/>
-
     <TextView
         android:id="@+id/modelSelectorText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Select a model"
-        app:layout_constraintBottom_toTopOf="@+id/modelInfo"
+        android:text="Select a model type"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/modelVersionSelector"
         app:layout_constraintEnd_toStartOf="@+id/modelSelector"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/button" />
-
+        app:layout_constraintStart_toStartOf="parent" />
     <Spinner
         android:id="@+id/modelSelector"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Select interpreter"
-        app:layout_constraintBottom_toTopOf="@id/modelInfo"
+        app:layout_constraintBottom_toTopOf="@id/modelVersionSelector"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/modelSelectorText"
-        app:layout_constraintEnd_toStartOf="@id/deviceText"
-        app:layout_constraintTop_toBottomOf="@+id/button" />
+        app:layout_constraintTop_toTopOf="parent" />
+    <TextView
+        android:id="@+id/modelVersionSelectorText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Select model version"
+        app:layout_constraintBottom_toTopOf="@+id/modelQuantSelectorText"
+        app:layout_constraintEnd_toStartOf="@+id/modelVersionSelector"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/modelSelectorText" />
+
+    <Spinner
+        android:id="@+id/modelVersionSelector"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toTopOf="@id/modelQuantSelector"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/modelVersionSelectorText"
+        app:layout_constraintTop_toBottomOf="@id/modelSelector" />
+    <TextView
+        android:id="@+id/modelQuantSelectorText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Select quantization"
+        app:layout_constraintBottom_toTopOf="@+id/deviceText"
+        app:layout_constraintEnd_toStartOf="@+id/modelQuantSelector"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/modelVersionSelectorText" />
+
+    <Spinner
+        android:id="@+id/modelQuantSelector"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toTopOf="@id/device"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/modelQuantSelectorText"
+        app:layout_constraintTop_toBottomOf="@id/modelVersionSelector" />
+
     <TextView
         android:id="@+id/deviceText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Select inference device"
-        app:layout_constraintStart_toEndOf="@id/modelSelector"
+        app:layout_constraintBottom_toTopOf="@+id/modelInfo"
         app:layout_constraintEnd_toStartOf="@id/device"
-        app:layout_constraintTop_toBottomOf="@id/button"
-        app:layout_constraintBottom_toTopOf="@id/modelInfo"
-        />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/modelQuantSelectorText" />
+
     <Spinner
         android:id="@+id/device"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        app:layout_constraintTop_toBottomOf="@id/button"
-        app:layout_constraintBottom_toTopOf="@id/modelInfo"
+        app:layout_constraintBottom_toTopOf="@+id/modelInfo"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/deviceText"
-        />
+        app:layout_constraintTop_toBottomOf="@+id/modelQuantSelector" />
+
     <LinearLayout
         android:id="@+id/modelInfo"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/progress"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/modelSelector"
-        app:layout_constraintBottom_toTopOf="@id/progress">
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/modelSelector">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -118,9 +142,9 @@
             android:id="@+id/textView4"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center"
             android:text="Time spent (ms)"
-            android:textColor="@color/black"
-            android:gravity="center"/>
+            android:textColor="@color/black" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -132,25 +156,25 @@
                 android:id="@+id/preTime"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="Preprocessing"
                 android:layout_weight="1"
-                android:gravity="center"/>
+                android:gravity="center"
+                android:text="Preprocessing" />
 
             <TextView
                 android:id="@+id/runTime"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="Inference"
                 android:layout_weight="1"
-                android:gravity="center"/>
+                android:gravity="center"
+                android:text="Inference" />
 
             <TextView
                 android:id="@+id/postTime"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="Postprocessing"
                 android:layout_weight="1"
-                android:gravity="center"/>
+                android:gravity="center"
+                android:text="Postprocessing" />
         </LinearLayout>
 
         <LinearLayout
@@ -163,25 +187,25 @@
                 android:id="@+id/preTimeVal"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text=""
                 android:layout_weight="1"
-                android:gravity="center"/>
+                android:gravity="center"
+                android:text="" />
 
             <TextView
                 android:id="@+id/runTimeVal"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text=""
                 android:layout_weight="1"
-                android:gravity="center"/>
+                android:gravity="center"
+                android:text="" />
 
             <TextView
                 android:id="@+id/postTimeVal"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text=""
                 android:layout_weight="1"
-                android:gravity="center"/>
+                android:gravity="center"
+                android:text="" />
         </LinearLayout>
 
     </LinearLayout>
@@ -193,18 +217,19 @@
         android:layout_height="wrap_content"
         android:text="Info"
         android:textColor="@color/black"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/button"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/button" />
+        app:layout_constraintTop_toBottomOf="@id/modelInfo" />
 
-    <TextView
-        android:id="@+id/energy"
+    <Button
+        android:id="@+id/loopButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Energy\nconsumption (kWh)"
+        android:text="Loop"
         app:layout_constraintBottom_toTopOf="@+id/energyVal"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/progress" />
 
     <TextView
@@ -213,7 +238,18 @@
         android:layout_height="wrap_content"
         android:text=""
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="@+id/energy"
-        app:layout_constraintTop_toBottomOf="@id/energy" />
+        app:layout_constraintEnd_toEndOf="@+id/loopButton"
+        app:layout_constraintTop_toBottomOf="@id/loopButton" />
+    <Button
+        android:id="@+id/button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:enabled="false"
+        android:text="Start"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/progress"
+        />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -4,12 +4,16 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.OnLifecycleEvent
+import androidx.lifecycle.lifecycleScope
 import com.example.models.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,9 +29,8 @@ import kotlin.time.measureTime
 class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val TAG = "Main"
     private lateinit var activityMainBinding: ActivityMainBinding
-    private val model = ResNet(this)
+    private lateinit var model : Model
     private val interpreter = Interpreter(this)
-    private var modelPath =""
     private var isModelSelected = false
     private var isDeviceSelected = false
     private val placeholder = listOf("---")
@@ -47,6 +50,8 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             requestPermissions(arrayOf(Manifest.permission.READ_MEDIA_IMAGES), 0)
         }
         initUI()
+        checkResultDirectories()
+        //loadDataset()
         /*
         val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
         // Get current battery level in percentage
@@ -64,21 +69,88 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         println("Battery Current (Now): $batteryCurrentNow µA")
         */
     }
+
+    private suspend fun loop(){
+        activityMainBinding.modelSelector.onItemSelectedListener!!.onItemSelected(activityMainBinding.modelSelector,activityMainBinding.modelSelector.selectedView,1,activityMainBinding.modelSelector.selectedItemId)
+        activityMainBinding.modelVersionSelector.onItemSelectedListener!!.onItemSelected(activityMainBinding.modelVersionSelector,activityMainBinding.modelVersionSelector.selectedView,1,activityMainBinding.modelVersionSelector.selectedItemId)
+        for(i in 1 until activityMainBinding.modelQuantSelector.adapter.count) {
+            activityMainBinding.modelQuantSelector.onItemSelectedListener!!.onItemSelected(activityMainBinding.modelQuantSelector,activityMainBinding.modelQuantSelector.selectedView,i,activityMainBinding.modelQuantSelector.selectedItemId,)
+            for (j in 1 until activityMainBinding.device.adapter.count) {
+                activityMainBinding.device.onItemSelectedListener!!.onItemSelected(activityMainBinding.device, activityMainBinding.device.selectedView, j,activityMainBinding.device.selectedItemId)
+                try {
+                    if (interpreter.isInitialized()) {
+                        interpreter.close()
+                    }
+                    interpreter.initializeInterpreter(model)
+                }
+                catch (e:Exception){
+                    Log.e("Crash","$e\nSkipping iteration for ${model.getModelName()}_${interpreter.getExecutingDevice()}")
+                    continue
+                }
+                model.initializeIO()
+                validate()
+            }
+        }
+    }
+    private fun initUI(){
+        //Button to start the validation
+        activityMainBinding.button.setOnClickListener {
+            CoroutineScope(Dispatchers.Main).launch {
+                try {
+                    if (interpreter.isInitialized()) {
+                        interpreter.close()
+                    }
+                    interpreter.initializeInterpreter(model)
+                }
+                catch (e:Exception){
+                    Log.e(TAG,"$e")
+                }
+                model.initializeIO()
+                validate()
+            }
+            activityMainBinding.button.isEnabled = false
+            activityMainBinding.progress.text = getString(R.string.starting)
+        }
+        activityMainBinding.loopButton.setOnClickListener{
+            CoroutineScope(Dispatchers.Main).launch {
+                loop()
+            }
+            activityMainBinding.loopButton.isEnabled=false
+        }
+        //Fill the spinner with the available interpreters
+        activityMainBinding.modelSelector.adapter = ArrayAdapter(this,android.R.layout.simple_spinner_item,placeholder + assets.list("models")!!.toList())
+        activityMainBinding.device.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,placeholder + interpreter.getDeviceList())
+        //Attach listeners
+        activityMainBinding.modelSelector.onItemSelectedListener = this
+        activityMainBinding.modelVersionSelector.onItemSelectedListener = this
+        activityMainBinding.modelQuantSelector.onItemSelectedListener = this
+        activityMainBinding.device.onItemSelectedListener = this
+    }
     override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
         if (parent.getItemAtPosition(position) != placeholder[0]) {
             when (parent.id) {
                 activityMainBinding.modelSelector.id -> {
                     activityMainBinding.selectedModel.text = parent.getItemAtPosition(position).toString()
-                    if (interpreter.isInitialized()) {
-                        interpreter.close()
-                    }
                     try {
-                        modelPath = "tflite/${parent.getItemAtPosition(position)}"
+                        model = when(parent.getItemAtPosition(position).toString()){
+                            "YOLO" -> YOLO(this)
+                            "ResNet" -> ResNet(this)
+                            else -> throw Exception()
+                        }
+                        activityMainBinding.modelVersionSelector.adapter = ArrayAdapter(this,android.R.layout.simple_spinner_item, placeholder + assets.list(model.modelRootDir)!!.toList())
                         isModelSelected=true
-                        model.loadModelFile(modelPath)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error loading model\n$e")
                     }
+                }
+                activityMainBinding.modelVersionSelector.id ->{
+                    model.setModelVersion(parent.getItemAtPosition(position).toString())
+                    activityMainBinding.modelQuantSelector.adapter = ArrayAdapter(this,android.R.layout.simple_spinner_item, placeholder + assets.list(model.modelRootDir + model.getModelVersion())!!.toList())
+                }
+                activityMainBinding.modelQuantSelector.id -> {
+                    model.setModelFullPath(parent.getItemAtPosition(position).toString())
+                    model.setModelName(parent.getItemAtPosition(position).toString().removeSuffix(".tflite"))
+                    model.loadModelFile()
                 }
                 activityMainBinding.device.id -> {
                     interpreter.selectExecutionDevice(position - 1)
@@ -98,88 +170,58 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         }
     }
     override fun onNothingSelected(parent: AdapterView<*>?) {}
-    private fun initUI(){
-        //Button to start the validation
-        activityMainBinding.button.setOnClickListener {
-            CoroutineScope(Dispatchers.Default).launch {
-                interpreter.initializeInterpreter(model)
-                model.initializeIO()
-                validate()
-            }
-            activityMainBinding.button.isEnabled = false
-            activityMainBinding.progress.text = getString(R.string.starting)
-        }
-        //Fill the spinner with the available interpreters
-        val modelDir = placeholder + assets.list("tflite")!!.toList()//File(,"tflite").listFiles()//!!.map{it.name}
-        val modelArray = ArrayAdapter(this,android.R.layout.simple_spinner_item,modelDir)
-        modelArray.setDropDownViewResource(android.R.layout.simple_spinner_item)
-        activityMainBinding.modelSelector.adapter=modelArray
-        activityMainBinding.device.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,placeholder + interpreter.getDeviceList())
-        //ArrayAdapter.createFromResource(this,R.array.available_interpreters, android.R.layout.simple_spinner_item).also {
-            //it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            //activityMainBinding.interpreterSelector.adapter = it
-        //}
-        activityMainBinding.modelSelector.onItemSelectedListener = this
-        activityMainBinding.device.onItemSelectedListener = this
-    }
+
     private suspend fun validate() {
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-        Log.i(TAG,"Listing validation dataset...")
-        val imgList = File(model.datasetPath).walkTopDown().filter{it.extension == "jpg"}.map { it.absolutePath }.toList().sorted()
-        Log.i(TAG,"Finished listing.")
+        val imgList = assets.open(model.datasetPaths).bufferedReader().readLines()
         val datasetChunk = imgList.size
         var info : Float = 0f
         var tik : Int
         var tok : Int
         var pre: Duration
         var post : Duration
-        if(checkResultDirectories()){
-            Log.i(TAG,"Starting benchmark...")
-            model.clearResultList()
-            if (imgList != null) {
-                for ((i, filename) in imgList.take(datasetChunk).withIndex()) {
-                    pre = measureTime {
-                        model.preprocess(filename)
-                        if(interpreter.isInputQuantized()){
-                            quantize(model.modelInput,interpreter.getInputQuant())
-                        }
-                        array2Buffer(model.modelInput,interpreter.getInputBuffer(),interpreter.getInputDatatype())
-                    }
-                    //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                    interpreter.run()
-                    //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                    post = measureTime {
-                        buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
-                        if(interpreter.isOutputQuantized()){
-                            dequantize(model.modelOutput,interpreter.getOutputQuant())
-                        }
-                        model.postprocess()
-                    }
-                    interpreter.clearIOBuffers()
-                    model.inferenceOutputToExportFormat()
-                    //energyConsumption[i] = tok-tik
-                    preTime.add(pre)
-                    //activityMainBinding.preTimeVal.text=pre.toString()
-                    runTime.add(interpreter.getInferenceTimeNanoseconds())
-                    //activityMainBinding.runTimeVal.text=run.toString()
-                    postTime.add(post)
-                    //activityMainBinding.postTimeVal.text=post.toString()
-                    info = (i.toFloat() / datasetChunk * 1e2f)
-                    val progressText = getString(R.string.progress,info)
-                    withContext(Dispatchers.Main) {
-                        activityMainBinding.progress.text = progressText
-                        //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
-                    }
+        Log.i(TAG,"Starting benchmark...")
+        model.clearResultList()
+        for (i in 0 until datasetChunk) {
+            pre = measureTime {
+                model.preprocess(imgList[i])
+                if(interpreter.isInputQuantized()){
+                    quantize(model.modelInput,interpreter.getInputQuant())
                 }
+                array2Buffer(model.modelInput,interpreter.getInputBuffer(),interpreter.getInputDatatype())
+            }
+            //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            interpreter.run()
+            //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            post = measureTime {
+                buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
+                if(interpreter.isOutputQuantized()){
+                    dequantize(model.modelOutput,interpreter.getOutputQuant())
+                }
+                model.postprocess()
+            }
+            interpreter.clearIOBuffers()
+            model.inferenceOutputToExportFormat()
+            //energyConsumption[i] = tok-tik
+            preTime.add(pre)
+            //activityMainBinding.preTimeVal.text=pre.toString()
+            runTime.add(interpreter.getInferenceTimeNanoseconds())
+            //activityMainBinding.runTimeVal.text=run.toString()
+            postTime.add(post)
+            //activityMainBinding.postTimeVal.text=post.toString()
+            info = (i.toFloat() / datasetChunk * 1e2f)
+            withContext(Dispatchers.Main) {
+                activityMainBinding.progress.text = getString(R.string.progress,info)
+                //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
             }
         }
-        writeOutputToFile("${modelPath.split("/").last().split(".").first()}_${interpreter.executingDevice}${model.exportFileExtension}",model.serializeResults())
+        writeToFile(outputFilename(),model.serializeResults())
         val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/datasetChunk
         val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
         val postTimeVal = postTime.reduce { acc, duration -> acc + duration }/datasetChunk
         //val energyVal = (energyConsumption.reduce { acc, l -> acc + l }).toFloat()/datasetChunk
-        val time = "$preTimeVal;$runTimeVal;$postTimeVal"
-        writeTimeToFile("${modelPath.split("/").last().split(".").first()}_${interpreter.executingDevice}${model.getTimeFileExtension()}",time)
+        val time = "$preTimeVal;${runTimeVal}ms;$postTimeVal"
+        writeToFile(outputFilename(true),time,true)
         withContext(Dispatchers.Main) {
             activityMainBinding.progress.text = getString(R.string.completed)
             //activityMainBinding.preTimeVal.text="AVG: ${preTimeVal}"
@@ -193,8 +235,13 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         interpreter.close()
         super.onDestroy()
     }
-    private fun writeOutputToFile(filename :String, content: String){
-        val dirName = "Results/InferenceResult"
+
+    private fun outputFilename(isTime:Boolean = false):String{
+        val filename = if(!isTime){ "${model.getModelName()}_${interpreter.getExecutingDevice()}_output${model.exportFileExtension}" } else{ "${model.getModelName()}_${interpreter.getExecutingDevice()}_time${model.getTimeFileExtension()}" }
+        return filename
+    }
+    private fun writeToFile(filename :String, content: String, isTime: Boolean = false){
+        val dirName = if(!isTime){ "Results/InferenceResult" } else{ "Results/TimeBenchmark" }
         val dir = File(documentsDir,dirName)
         val file  = File(dir,filename)
         try {
@@ -207,35 +254,12 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             if(file.readText()!=content){
                 throw Exception("Error writing output to file, text mismatch")
             }
-            //file.outputStream().write(text.toByteArray(Charsets.UTF_8))
-            //file.outputStream().fd.sync()
-            //file.outputStream().close()
         }
         catch (e:Exception) {
             Log.e("FileWrite", "Writing output to file failed $e")
             throw(e)
         }
-        Log.i("FileWrite","Output written to file successfully.")
-    }
-    private fun writeTimeToFile(filename: String,content: String){
-        val dirName = "Results/TimeBenchmark"
-        val dir = File(documentsDir,dirName)
-        val file = File(dir,filename)
-        try {
-            if(file.exists()){
-                file.delete()
-            }
-            Log.i("FileWrite","Writing time to file...")
-            file.writeText(content)
-            if(file.readText()!=content){
-                throw Exception("Error writing time to file, text mismatch")
-            }
-        }
-        catch (e:Exception) {
-            Log.e("FileWrite", "Writing time to file failed $e")
-            throw(e)
-        }
-        Log.i("FileWrite","Time written to file successfully.")
+        Log.i("FileWrite","Output written to $filename successfully.")
     }
     private fun checkResultDirectories():Boolean{
         var ret = true
@@ -288,5 +312,12 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             }
         }
      return ret
+    }
+    private fun loadDataset(){
+        Log.i(TAG,"Listing validation dataset...")
+        //val imgList = File(model.datasetPath).walkTopDown().filter{it.extension == "jpg"}.map { it.absolutePath }.toList().sorted()
+        Log.i(TAG,"Finished listing.")
+        val f = File(documentsDir,"a.txt")
+        //f.writeText(imgList.joinToString("\n"))
     }
 }

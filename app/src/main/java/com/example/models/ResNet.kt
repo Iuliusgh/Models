@@ -16,7 +16,8 @@ class ResNet(context:Context): Model(context) {
     private val resizeSize = 256
     private val cropSize = 224
     private val classificationResultList:MutableList<IntArray> = mutableListOf()
-    override val datasetPath: String = super.datasetPath + "Imagenet/archive"
+    override val datasetPaths: String = super.datasetPaths + "ImagenetPaths.txt"
+    override val modelRootDir: String = super.modelRootDir + "ResNet/"
     override val exportFileExtension: String = ".csv"
     private val k = 5 // # of top results to take
 

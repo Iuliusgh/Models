@@ -31,7 +31,7 @@ suspend fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: 
     val byteSize = bufferDataType.byteSize()
     //val byteArray = ByteArray(byteSize){0}
     parallelArrayOperation(buffer.capacity()/byteSize,{ i ->
-        val byteArray = ByteArray(byteSize){0}
+        val byteArray = ByteArray(Float.SIZE_BYTES){0}
         for (j in 0 until byteSize){
             byteArray[j] = buffer[i*byteSize+j]
         }

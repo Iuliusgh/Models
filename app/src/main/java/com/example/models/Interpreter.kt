@@ -15,7 +15,7 @@ import java.nio.ByteOrder
 class Interpreter (private val context: Context){
     private var initialized = false
     private val deviceList = queryDeviceCapabilities()
-    lateinit var executingDevice : String
+    private lateinit var executingDevice : String
     /*: Map<Int,String> = mapOf(
         0 to "CPU - Single core",
         1 to "CPU - Multicore",
@@ -194,6 +194,9 @@ class Interpreter (private val context: Context){
     }
     fun getInferenceTimeNanoseconds():Long{
         return liteRTInterpreter.lastNativeInferenceDurationNanoseconds
+    }
+    fun getExecutingDevice():String{
+        return executingDevice
     }
 }
 
