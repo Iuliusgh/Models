@@ -140,7 +140,7 @@ class YOLO(context: Context) : Model(context) {
         Core.divide(floatImg,Scalar(255.0,255.0,255.0),floatImg)
         floatImg.get(0, 0, modelInput)
     }
-    override suspend fun postprocess() {
+    override fun postprocess() {
         nms()
         scaleBoxesToImage()
     }
@@ -153,7 +153,7 @@ class YOLO(context: Context) : Model(context) {
         return formatJSONForExport()
     }
 
-    private suspend fun nms() {
+    private fun nms() {
         //Variable declaration
 
         //1D array to [1][8400][84]

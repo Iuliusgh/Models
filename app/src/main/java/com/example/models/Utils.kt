@@ -1,18 +1,15 @@
 package com.example.models
 
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Tensor.QuantizationParams
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.min
+import java.util.function.IntConsumer
+import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
-suspend fun array2Buffer(array : FloatArray,buffer: ByteBuffer, bufferDataType : DataType) {
+fun array2Buffer(array : FloatArray,buffer: ByteBuffer, bufferDataType : DataType) {
     val byteSize = bufferDataType.byteSize()
     parallelArrayOperation(array.size,{ i ->
         if(bufferDataType==DataType.FLOAT32){
@@ -26,7 +23,7 @@ suspend fun array2Buffer(array : FloatArray,buffer: ByteBuffer, bufferDataType :
     })
     buffer.rewind()
 }
-suspend fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: DataType){
+fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: DataType){
     buffer.rewind()
     val byteSize = bufferDataType.byteSize()
     //val byteArray = ByteArray(byteSize){0}
@@ -43,27 +40,31 @@ suspend fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: 
         array[i] = ByteBuffer.wrap(byteArray).order(ByteOrder.nativeOrder()).getFloat()
     })
 }
-suspend fun quantize(array: FloatArray,quant:QuantizationParams){
+fun quantize(array: FloatArray,quant:QuantizationParams){
     parallelArrayOperation(array.size,{ i ->
         array[i] = array[i] / quant.scale + quant.zeroPoint
     })
 }
-suspend fun dequantize(array: FloatArray, quant: QuantizationParams){
+fun dequantize(array: FloatArray, quant: QuantizationParams){
     parallelArrayOperation(array.size,{ i ->
         array[i] = array[i] / quant.scale + quant.zeroPoint
     })
 }
-suspend fun parallelArrayOperation(size:Int, block: (Int) -> Unit, threads:Int=Runtime.getRuntime().availableProcessors()){
-    val chunkSize = size / threads
-    coroutineScope {
-        (0 until threads).map { threadId ->
-            val start = chunkSize * threadId
-            val end = min(start + chunkSize,size)
-            async(Dispatchers.Default){
-                for (index in start until end) {
-                    block(index)
-                }
+fun parallelArrayOperation(size:Int, block:IntConsumer, threads:Int=Runtime.getRuntime().availableProcessors()){
+    val chunkSize: Int = size / threads
+    val jobs = ArrayList<Thread>(threads)
+    for (threadId in 0 until threads){
+        val start : Int = chunkSize * threadId
+        val end : Int = if (threadId < threads - 1) start + chunkSize else size
+        val job = thread(start=false){
+            var i = start
+            while(i < end){
+                block.accept(i)
+                i++
             }
-        }.awaitAll()
+        }
+        jobs.add(job)
+        job.start()
     }
+    jobs.forEach { it.join() }
 }

@@ -64,6 +64,7 @@ class Interpreter (private val context: Context){
         when (executingDevice) {
             "CPU_SC" -> {
                 interpreterOptions.setUseXNNPACK(true)
+                interpreterOptions.setNumThreads(1)
             }
 
             "CPU_MC" -> {

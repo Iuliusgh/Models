@@ -4,16 +4,12 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Environment
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.OnLifecycleEvent
-import androidx.lifecycle.lifecycleScope
 import com.example.models.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +17,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
 import java.io.File
-import kotlin.math.floor
 import kotlin.time.Duration
 import kotlin.time.measureTime
 
@@ -34,11 +29,13 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private var isModelSelected = false
     private var isDeviceSelected = false
     private val placeholder = listOf("---")
-    private val preTime:MutableList<Duration>  = mutableListOf()
-    private val runTime:MutableList<Long>  = mutableListOf()
-    private val postTime:MutableList<Duration>  = mutableListOf()
+    private lateinit var dataset:List<String>
+    private val preTime: Array<Duration> by lazy { Array(dataset.size){Duration.ZERO} }
+    private val runTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
+    private val postTime:Array<Duration> by lazy{ Array(dataset.size){Duration.ZERO} }
     private val energyConsumption = Array(5000) { 0 }
     private val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,26 +68,76 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     }
 
     private suspend fun loop(){
+        val modelList = assets.list("models")!!.toList()
+
+        val deviceList = interpreter.getDeviceList()
+        for( i in modelList.indices){
+            model = when(modelList[i]){
+                "YOLO" -> YOLO(this)
+                "ResNet" -> ResNet(this)
+                else -> break
+            }
+            val modelVariantList = assets.list(model.modelRootDir)!!.toList().sortedBy{name -> Regex("\\d+").find(name)!!.value.toInt()}
+            loadDataset()
+            for (j in modelVariantList.indices){
+                model.setModelVersion(modelVariantList[j])
+                val modelQuantList = assets.list(model.modelRootDir + model.getModelVersion())!!.toList()
+                for(k in modelQuantList.indices){
+                    model.setModelFullPath(modelQuantList[k].toString())
+                    model.setModelName(modelQuantList[k].toString().removeSuffix(".tflite"))
+                    model.loadModelFile()
+                    for(l in deviceList.indices){
+                        interpreter.selectExecutionDevice(l)
+                        try{
+                            interpreter.initializeOptions()
+                        }
+                        catch (e:Exception){
+                            Log.e(TAG,"Invalid interpreter options, skipping iteration")
+                            continue
+                        }
+                        try {
+                            if (interpreter.isInitialized()) {
+                                interpreter.close()
+                            }
+                            interpreter.initializeInterpreter(model)
+                            model.initializeIO()
+                            validate()
+                        } catch (e: Exception) {
+                            Log.e("Crash","$e\nSkipping iteration for ${model.getModelName()}_${interpreter.getExecutingDevice()}")
+                            continue
+                        }
+                    }
+                }
+            }
+        }
+        /*
         activityMainBinding.modelSelector.onItemSelectedListener!!.onItemSelected(activityMainBinding.modelSelector,activityMainBinding.modelSelector.selectedView,1,activityMainBinding.modelSelector.selectedItemId)
         activityMainBinding.modelVersionSelector.onItemSelectedListener!!.onItemSelected(activityMainBinding.modelVersionSelector,activityMainBinding.modelVersionSelector.selectedView,1,activityMainBinding.modelVersionSelector.selectedItemId)
         for(i in 1 until activityMainBinding.modelQuantSelector.adapter.count) {
             activityMainBinding.modelQuantSelector.onItemSelectedListener!!.onItemSelected(activityMainBinding.modelQuantSelector,activityMainBinding.modelQuantSelector.selectedView,i,activityMainBinding.modelQuantSelector.selectedItemId,)
             for (j in 1 until activityMainBinding.device.adapter.count) {
-                activityMainBinding.device.onItemSelectedListener!!.onItemSelected(activityMainBinding.device, activityMainBinding.device.selectedView, j,activityMainBinding.device.selectedItemId)
+                activityMainBinding.device.onItemSelectedListener!!.onItemSelected(
+                    activityMainBinding.device,
+                    activityMainBinding.device.selectedView,
+                    j,
+                    activityMainBinding.device.selectedItemId
+                )
                 try {
-                    if (interpreter.isInitialized()) {
-                        interpreter.close()
+                    CoroutineScope(Dispatchers.Main).launch {
+                        if (interpreter.isInitialized()) {
+                            interpreter.close()
+                        }
+                        interpreter.initializeInterpreter(model)
+                        model.initializeIO()
+                        validate()
                     }
-                    interpreter.initializeInterpreter(model)
-                }
-                catch (e:Exception){
+                } catch (e: Exception) {
                     Log.e("Crash","$e\nSkipping iteration for ${model.getModelName()}_${interpreter.getExecutingDevice()}")
                     continue
                 }
-                model.initializeIO()
-                validate()
             }
         }
+      */
     }
     private fun initUI(){
         //Button to start the validation
@@ -112,7 +159,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             activityMainBinding.progress.text = getString(R.string.starting)
         }
         activityMainBinding.loopButton.setOnClickListener{
-            CoroutineScope(Dispatchers.Main).launch {
+            CoroutineScope(Dispatchers.Default).launch {
                 loop()
             }
             activityMainBinding.loopButton.isEnabled=false
@@ -137,8 +184,9 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                             "ResNet" -> ResNet(this)
                             else -> throw Exception()
                         }
-                        activityMainBinding.modelVersionSelector.adapter = ArrayAdapter(this,android.R.layout.simple_spinner_item, placeholder + assets.list(model.modelRootDir)!!.toList())
+                        activityMainBinding.modelVersionSelector.adapter = ArrayAdapter(this,android.R.layout.simple_spinner_item, placeholder + assets.list(model.modelRootDir)!!.toList().sortedBy{name -> Regex("\\d+").find(name)!!.value.toInt()})
                         isModelSelected=true
+                        loadDataset()
                     } catch (e: Exception) {
                         Log.e(TAG, "Error loading model\n$e")
                     }
@@ -160,7 +208,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                         isDeviceSelected=true
                     }
                     catch(e:Exception){
-                        Toast.makeText(this,e.toString(),Toast.LENGTH_SHORT).show()
+                        Log.e(TAG,"$e")
                     }
                 }
             }
@@ -173,18 +221,17 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
 
     private suspend fun validate() {
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-        val imgList = assets.open(model.datasetPaths).bufferedReader().readLines()
-        val datasetChunk = imgList.size
-        var info : Float = 0f
+        val datasetChunk = dataset.size
+        var info = 0f
         var tik : Int
         var tok : Int
         var pre: Duration
         var post : Duration
-        Log.i(TAG,"Starting benchmark...")
+        Log.i(TAG,"Executing ${model.getModelName()} on ${interpreter.getExecutingDevice()}. Starting benchmark...")
         model.clearResultList()
         for (i in 0 until datasetChunk) {
             pre = measureTime {
-                model.preprocess(imgList[i])
+                model.preprocess(dataset[i])
                 if(interpreter.isInputQuantized()){
                     quantize(model.modelInput,interpreter.getInputQuant())
                 }
@@ -203,11 +250,11 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             interpreter.clearIOBuffers()
             model.inferenceOutputToExportFormat()
             //energyConsumption[i] = tok-tik
-            preTime.add(pre)
+            preTime[i]=pre
             //activityMainBinding.preTimeVal.text=pre.toString()
-            runTime.add(interpreter.getInferenceTimeNanoseconds())
+            runTime[i] = interpreter.getInferenceTimeNanoseconds()
             //activityMainBinding.runTimeVal.text=run.toString()
-            postTime.add(post)
+            postTime[i] = post
             //activityMainBinding.postTimeVal.text=post.toString()
             info = (i.toFloat() / datasetChunk * 1e2f)
             withContext(Dispatchers.Main) {
@@ -235,7 +282,6 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         interpreter.close()
         super.onDestroy()
     }
-
     private fun outputFilename(isTime:Boolean = false):String{
         val filename = if(!isTime){ "${model.getModelName()}_${interpreter.getExecutingDevice()}_output${model.exportFileExtension}" } else{ "${model.getModelName()}_${interpreter.getExecutingDevice()}_time${model.getTimeFileExtension()}" }
         return filename
@@ -313,11 +359,16 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         }
      return ret
     }
-    private fun loadDataset(){
+    private fun listDataset(){
         Log.i(TAG,"Listing validation dataset...")
         //val imgList = File(model.datasetPath).walkTopDown().filter{it.extension == "jpg"}.map { it.absolutePath }.toList().sorted()
         Log.i(TAG,"Finished listing.")
         val f = File(documentsDir,"a.txt")
         //f.writeText(imgList.joinToString("\n"))
+    }
+    private fun loadDataset(){
+        Log.i(TAG,"Loading dataset...")
+        dataset = assets.open(model.datasetPaths).bufferedReader().readLines()
+        Log.i(TAG,"Dataset paths loaded.")
     }
 }
