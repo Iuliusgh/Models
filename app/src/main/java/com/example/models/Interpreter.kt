@@ -24,7 +24,7 @@ class Interpreter (private val context: Context){
         4 to "NPU - Int8",
         5 to "NPU - Float16"
     )*/
-    private val interpreterOptions = Interpreter.Options()
+    private lateinit var interpreterOptions:Interpreter.Options
     private lateinit var liteRTInterpreter: Interpreter
     data class IOInfo(
         var dataType:DataType,
@@ -57,6 +57,7 @@ class Interpreter (private val context: Context){
         return deviceCapabilities
     }
     fun initializeOptions() {
+        interpreterOptions = Interpreter.Options()
         interpreterOptions.runtime = InterpreterApi.Options.TfLiteRuntime.FROM_APPLICATION_ONLY
         interpreterOptions.setAllowBufferHandleOutput(true)
         interpreterOptions.setUseNNAPI(false)
@@ -99,11 +100,11 @@ class Interpreter (private val context: Context){
     fun initializeInterpreter(model:Model){
         try {
             liteRTInterpreter = Interpreter(model.getModelBuffer(), interpreterOptions)
-            Log.i("Delegate","Delegate instantiated successfully using model")
+            Log.i("Interpreter","Interpreter instantiated successfully.")
             initialized=true
         }
         catch (e: Exception){
-            Log.e("Interpreter","Cannot initialize TFLiteInterpreter",e)
+            Log.e("Interpreter","Cannot initialize with selected options.",e)
             throw e
         }
         initializeIOInfo()
@@ -113,7 +114,7 @@ class Interpreter (private val context: Context){
     }
     private fun initQNNDelegate(): Delegate {
         val options = QnnDelegate.Options()
-        //options.setLogLevel(QnnDelegate.Options.LogLevel.LOG_LEVEL_VERBOSE)
+        options.setLogLevel(QnnDelegate.Options.LogLevel.LOG_OFF)
         options.skelLibraryDir = context.applicationInfo.nativeLibraryDir
         //options.libraryPath = applicationInfo.nativeLibraryDir
         options.cacheDir = context.cacheDir.absolutePath
@@ -156,7 +157,9 @@ class Interpreter (private val context: Context){
         return initialized
     }
     fun close(){
-        liteRTInterpreter.close()
+        if(initialized){
+            liteRTInterpreter.close()
+        }
         initialized=false
     }
     fun run(){

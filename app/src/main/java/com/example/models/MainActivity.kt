@@ -8,7 +8,6 @@ import android.util.Log
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.models.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
@@ -16,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
+import org.tensorflow.lite.DataType
 import java.io.File
 import kotlin.time.Duration
 import kotlin.time.measureTime
@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val preTime: Array<Duration> by lazy { Array(dataset.size){Duration.ZERO} }
     private val runTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
     private val postTime:Array<Duration> by lazy{ Array(dataset.size){Duration.ZERO} }
-    private val energyConsumption = Array(5000) { 0 }
+    //private val energyConsumption = Array(5000) { 0 }
     private val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
 
 
@@ -69,7 +69,6 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
 
     private suspend fun loop(){
         val modelList = assets.list("models")!!.toList()
-
         val deviceList = interpreter.getDeviceList()
         for( i in modelList.indices){
             model = when(modelList[i]){
@@ -100,6 +99,9 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                                 interpreter.close()
                             }
                             interpreter.initializeInterpreter(model)
+                            if(interpreter.getInputDatatype()== DataType.INT16 && l > 1){
+                                break
+                            }
                             model.initializeIO()
                             validate()
                         } catch (e: Exception) {
@@ -142,7 +144,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private fun initUI(){
         //Button to start the validation
         activityMainBinding.button.setOnClickListener {
-            CoroutineScope(Dispatchers.Main).launch {
+            CoroutineScope(Dispatchers.Default).launch {
                 try {
                     if (interpreter.isInitialized()) {
                         interpreter.close()
@@ -221,7 +223,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
 
     private suspend fun validate() {
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-        val datasetChunk = dataset.size
+        val datasetChunk = 5// dataset.size
         var info = 0f
         var tik : Int
         var tok : Int
@@ -230,7 +232,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         Log.i(TAG,"Executing ${model.getModelName()} on ${interpreter.getExecutingDevice()}. Starting benchmark...")
         model.clearResultList()
         for (i in 0 until datasetChunk) {
-            pre = measureTime {
+            preTime[i] = measureTime {
                 model.preprocess(dataset[i])
                 if(interpreter.isInputQuantized()){
                     quantize(model.modelInput,interpreter.getInputQuant())
@@ -240,7 +242,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
             interpreter.run()
             //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-            post = measureTime {
+            postTime[i] = measureTime {
                 buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
                 if(interpreter.isOutputQuantized()){
                     dequantize(model.modelOutput,interpreter.getOutputQuant())
@@ -250,11 +252,9 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             interpreter.clearIOBuffers()
             model.inferenceOutputToExportFormat()
             //energyConsumption[i] = tok-tik
-            preTime[i]=pre
             //activityMainBinding.preTimeVal.text=pre.toString()
             runTime[i] = interpreter.getInferenceTimeNanoseconds()
             //activityMainBinding.runTimeVal.text=run.toString()
-            postTime[i] = post
             //activityMainBinding.postTimeVal.text=post.toString()
             info = (i.toFloat() / datasetChunk * 1e2f)
             withContext(Dispatchers.Main) {
