@@ -9,6 +9,7 @@ import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
+import java.util.PriorityQueue
 import kotlin.math.round
 
 class ResNet(context:Context): Model(context) {
@@ -38,6 +39,9 @@ class ResNet(context:Context): Model(context) {
         Core.subtract(floatImg,Scalar(0.485, 0.456, 0.406),floatImg)
         Core.divide(floatImg, Scalar(0.229, 0.224, 0.225),floatImg)
         floatImg.get(0,0,modelInput)
+        mat.release()
+        resizedImg.release()
+        floatImg.release()
     }
 
 
@@ -46,7 +50,17 @@ class ResNet(context:Context): Model(context) {
     }
 
     override fun inferenceOutputToExportFormat() {
-        classificationResultList.add(modelOutput.withIndex().sortedByDescending { it.value }.take(k).map { it.index }.toIntArray())
+        val q = PriorityQueue<Pair<Int,Float>>(compareBy {it.second})
+        modelOutput.forEachIndexed { index, fl ->
+            if (q.size < k) {
+                q.add(index to fl)
+            } else if (fl > q.peek().second){
+                q.poll()
+                q.add(index to fl)
+            }
+        }
+        classificationResultList.add(q.sortedByDescending { it.second }.map { it.first }.toIntArray())
+        //classificationResultList.add(modelOutput.withIndex().sortedByDescending { it.value }.take(k).map { it.index }.toIntArray())
     }
 
     override fun clearResultList() {

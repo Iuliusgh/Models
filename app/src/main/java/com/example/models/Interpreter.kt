@@ -16,14 +16,6 @@ class Interpreter (private val context: Context){
     private var initialized = false
     private val deviceList = queryDeviceCapabilities()
     private lateinit var executingDevice : String
-    /*: Map<Int,String> = mapOf(
-        0 to "CPU - Single core",
-        1 to "CPU - Multicore",
-        2 to "GPU - Float32",
-        3 to "GPU - Float16",
-        4 to "NPU - Int8",
-        5 to "NPU - Float16"
-    )*/
     private lateinit var interpreterOptions:Interpreter.Options
     private lateinit var liteRTInterpreter: Interpreter
     data class IOInfo(
@@ -92,9 +84,9 @@ class Interpreter (private val context: Context){
             liteRTInterpreter.getOutputTensor(0).shape())
     }
     private fun initializeIOBuffers(){
-        inputBuffer = ByteBuffer.allocateDirect(inputInfo.shape.reduce{acc,i -> acc * i} * inputInfo.dataType.byteSize())
+        inputBuffer = ByteBuffer.allocate(inputInfo.shape.reduce{acc,i -> acc * i} * inputInfo.dataType.byteSize())
         inputBuffer.order(ByteOrder.nativeOrder())
-        outputBuffer = ByteBuffer.allocateDirect(outputInfo.shape.reduce{acc,i -> acc * i} * outputInfo.dataType.byteSize())
+        outputBuffer = ByteBuffer.allocate(outputInfo.shape.reduce{acc,i -> acc * i} * outputInfo.dataType.byteSize())
         outputBuffer.order(ByteOrder.nativeOrder())
     }
     fun initializeInterpreter(model:Model){
@@ -138,14 +130,14 @@ class Interpreter (private val context: Context){
                 options.setHtpPrecision(QnnDelegate.Options.HtpPrecision.HTP_PRECISION_QUANTIZED)
                 options.setHtpUseConvHmx(QnnDelegate.Options.HtpUseConvHmx.HTP_CONV_HMX_ON)
                 options.setHtpUseFoldRelu(QnnDelegate.Options.HtpUseFoldRelu.HTP_FOLD_RELU_ON)
-                options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_BURST)
+                options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_SUSTAINED_HIGH_PERFORMANCE)
             }
             "HTP_FP16" -> {
                 options.setBackendType(QnnDelegate.Options.BackendType.HTP_BACKEND)
                 options.setHtpPrecision(QnnDelegate.Options.HtpPrecision.HTP_PRECISION_FP16)
                 options.setHtpUseConvHmx(QnnDelegate.Options.HtpUseConvHmx.HTP_CONV_HMX_ON)
                 options.setHtpUseFoldRelu(QnnDelegate.Options.HtpUseFoldRelu.HTP_FOLD_RELU_ON)
-                options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_BURST)
+                options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_SUSTAINED_HIGH_PERFORMANCE)
             }
         }
         return  QnnDelegate(options)
