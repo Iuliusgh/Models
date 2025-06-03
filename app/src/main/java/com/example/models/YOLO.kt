@@ -1,6 +1,8 @@
 package com.example.models
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
@@ -139,8 +141,11 @@ class YOLO(context: Context) : Model(context) {
         paddedImg.convertTo(floatImg, CvType.CV_32FC3)
         Core.divide(floatImg,Scalar(255.0,255.0,255.0),floatImg)
         floatImg.get(0, 0, modelInput)
+        mat.release()
+        paddedImg.release()
+        floatImg.release()
     }
-    override fun postprocess() {
+    override suspend fun postprocess() {
         nms()
         scaleBoxesToImage()
     }
@@ -153,9 +158,8 @@ class YOLO(context: Context) : Model(context) {
         return formatJSONForExport()
     }
 
-    private fun nms() {
+    private suspend fun nms() {
         //Variable declaration
-
         //1D array to [1][8400][84]
        parallelArrayOperation(modelOutput.size,{ i ->
             if(i<outputShape[2]*4) {

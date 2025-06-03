@@ -108,4 +108,5 @@ dependencies {
     //implementation(files("../libs/qtld-release.aar"))
     //implementation(files("../libs/platform-validator.aar"))
     //implementation(files("../libs/snpe-release.aar"))
+
 }

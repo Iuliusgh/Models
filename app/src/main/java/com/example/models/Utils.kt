@@ -1,6 +1,9 @@
 package com.example.models
 
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Tensor.QuantizationParams
 import java.nio.ByteBuffer
@@ -14,7 +17,7 @@ import kotlin.ByteArray
 import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
-fun array2Buffer(array : FloatArray,buffer: ByteBuffer, bufferDataType : DataType) {
+suspend fun array2Buffer(array : FloatArray,buffer: ByteBuffer, bufferDataType : DataType) {
     val byteSize = bufferDataType.byteSize()
     parallelArrayOperation(array.size,{ i ->
         if(bufferDataType==DataType.FLOAT32){
@@ -28,70 +31,44 @@ fun array2Buffer(array : FloatArray,buffer: ByteBuffer, bufferDataType : DataTyp
     })
     buffer.rewind()
 }
-fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: DataType){
+suspend fun buffer2Array(buffer: ByteBuffer, array: FloatArray, bufferDataType: DataType){
     buffer.rewind()
     val byteSize = bufferDataType.byteSize()
-    parallelArrayOperation(buffer.capacity()/4,{ i ->
-        for (j in 0 until byteSize){
-            GlobalByteArrayArray.byteArrayArray[ThreadId.localThreadId.get()!!][j] = buffer[i*byteSize+j]
-        }
-        if(byteSize<4){
-            for (j in byteSize until Float.SIZE_BYTES){
-                GlobalByteArrayArray.byteArrayArray[ThreadId.localThreadId.get()!!][j] = 0
+    parallelArrayOperation(array.size,{ i ->
+        when(byteSize){
+            1 -> {
+                array[i] = buffer.get(i).toFloat()
+            }
+            2 -> {
+                array[i] = buffer.getShort(i*byteSize).toFloat()
+            }
+            4 -> {
+                array[i] = buffer.getFloat(i*byteSize)
             }
         }
-        GlobalByteBufferArray.byteBufferArray[ThreadId.localThreadId.get()!!].clear()
-        GlobalByteBufferArray.byteBufferArray[ThreadId.localThreadId.get()!!].put(GlobalByteArrayArray.byteArrayArray[ThreadId.localThreadId.get()!!])
-        GlobalByteBufferArray.byteBufferArray[ThreadId.localThreadId.get()!!].rewind()
-        array[i] = GlobalByteBufferArray.byteBufferArray[ThreadId.localThreadId.get()!!].getFloat()
-
     })
 }
-fun quantize(array: FloatArray,quant:QuantizationParams){
+suspend fun quantize(array: FloatArray,quant:QuantizationParams){
     parallelArrayOperation(array.size,{ i ->
         array[i] = array[i] / quant.scale + quant.zeroPoint
     })
 }
-fun dequantize(array: FloatArray, quant: QuantizationParams){
+suspend fun dequantize(array: FloatArray, quant: QuantizationParams){
     parallelArrayOperation(array.size,{ i ->
         array[i] = array[i] / quant.scale + quant.zeroPoint
     })
 }
-fun parallelArrayOperation(size:Int, block:IntConsumer, threads:Int=Runtime.getRuntime().availableProcessors()){
+suspend inline fun parallelArrayOperation(size: Int, block:IntConsumer, threads: Int = Runtime.getRuntime().availableProcessors()) {
     val chunkSize: Int = size / threads
-
-    for (threadId in 0 until threads){
-        val start : Int = chunkSize * threadId
-        val end : Int = if (threadId < threads - 1) start + chunkSize else size
-        thread(start = false){}
-        ThreadPool.pool.execute{
-            ThreadId.localThreadId.set(threadId)
-            var i = start
-            while(i < end){
-                block.accept(i)
-                i++
+    coroutineScope {
+        for (threadId in 0 until threads) {
+            val start: Int = chunkSize * threadId
+            val end: Int = if (threadId < threads - 1) start + chunkSize else size
+            launch(Dispatchers.Default) {
+                for (i in start until end) {
+                    block.accept(i)
+                }
             }
-            ThreadPool.latch.countDown()
         }
     }
-    ThreadPool.latch.await()
-
-}
-object ThreadPool{
-    private val maxThreads =  Runtime.getRuntime().availableProcessors()
-    val pool:ExecutorService = Executors.newFixedThreadPool(maxThreads)
-    val latch = CountDownLatch(maxThreads)
-    fun destroy(){
-        pool.shutdown()
-        pool.awaitTermination(1,TimeUnit.MINUTES)
-    }
-}
-object GlobalByteBufferArray{
-    val byteBufferArray = Array(Runtime.getRuntime().availableProcessors()){ByteBuffer.allocate(Float.SIZE_BYTES).order(ByteOrder.nativeOrder())}
-}
-object GlobalByteArrayArray{
-    val byteArrayArray = Array(Runtime.getRuntime().availableProcessors()){ ByteArray(Float.SIZE_BYTES){0} }
-}
-object ThreadId{
-    val localThreadId = ThreadLocal<Int>()
 }

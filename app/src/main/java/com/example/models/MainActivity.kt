@@ -32,9 +32,10 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val runTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
     private val postTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
     private val datasetChunk: Int by lazy { dataset.size }
+    private val progressPercent:Int by lazy{ datasetChunk/100}
     //private val energyConsumption = Array(5000) { 0 }
     private val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-    private var info = 0f
+    //private var info = 0f
     private var nanoTik: Long = 0L
     private var nanoTok: Long = 0L
 
@@ -198,7 +199,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
         //var tik : Int
         //var tok : Int
-
+        System.gc()
         Log.i(TAG,"Executing ${model.getModelName()} on ${interpreter.getExecutingDevice()}. Starting benchmark...")
         model.clearResultList()
         for (i in 0 until datasetChunk) {
@@ -228,11 +229,11 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             runTime[i] = interpreter.getInferenceTimeNanoseconds()
             //activityMainBinding.runTimeVal.text=run.toString()
             //activityMainBinding.postTimeVal.text=post.toString()
-            info = (i.toFloat() / datasetChunk * 1e2f)
-            withContext(Dispatchers.Main) {
-                activityMainBinding.progress.text = getString(R.string.progress,info)
+            if(i%progressPercent==0)Log.d("Progress","%.2f %% completed.".format((i.toFloat() / datasetChunk * 1e2f)))
+            //withContext(Dispatchers.Main) {
+                //activityMainBinding.progress.text = getString(R.string.progress,info)
                 //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
-            }
+            //}
         }
         writeToFile(outputFilename(),model.serializeResults())
         val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
@@ -252,7 +253,6 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     }
     public override fun onDestroy() {
         interpreter.close()
-        ThreadPool.destroy()
         super.onDestroy()
     }
     private fun outputFilename(isTime:Boolean = false):String{
