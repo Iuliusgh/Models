@@ -54,13 +54,12 @@ class ResNet(context:Context): Model(context) {
         modelOutput.forEachIndexed { index, fl ->
             if (q.size < k) {
                 q.add(index to fl)
-            } else if (fl > q.peek().second){
+            } else if (fl > q.peek()!!.second){
                 q.poll()
                 q.add(index to fl)
             }
         }
         classificationResultList.add(q.sortedByDescending { it.second }.map { it.first }.toIntArray())
-        //classificationResultList.add(modelOutput.withIndex().sortedByDescending { it.value }.take(k).map { it.index }.toIntArray())
     }
 
     override fun clearResultList() {

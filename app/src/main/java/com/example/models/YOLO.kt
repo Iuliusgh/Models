@@ -1,8 +1,6 @@
 package com.example.models
 
 import android.content.Context
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat

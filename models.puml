@@ -1,0 +1,56 @@
+@startuml
+class MainActivity {
+- Model model
+- Interpreter interpreter
+- List<String> dataset
+- void loop()
+- void validate()
+- void writeToFile(String,String,Boolean)
+}
+
+interface ModelInterface {
++ void preprocess(T)
++ void postprocess()
++ void inferenceOutputToExportFormat()
++ String serializeResults()
++ void clearResultList()
+}
+
+class YOLO {
+- MutableList<String> detectionsJSON
++ void preprocess(String)
++ void postprocess()
++ void inferenceOutputToExportFormat()
++ String serializeResults()
++ void clearResultList()
+}
+
+class Interpreter {
+- List<String> deviceList
+- Interpreter.Options interpreterOptions
+- Interpreter liteRTInterpreter
+- List<String> queryDeviceCapabilities()
++ void initializeOptions()
++ void initializeInterpreter(Model)
+- Delegate initQNNDelegate()
++ List<String> getDeviceList()
+}
+
+class Model {
+- MappedByteBuffer modelBuffer
++ void loadModelFile()
+}
+
+class ResNet {
+- MutableList<IntArray> classificationResultList
++ void preprocess(String)
++ void inferenceOutputToExportFormat()
++ String serializeResults()
++ void clearResultList()
+}
+
+
+Model <|-- YOLO
+ModelInterface <|.. Model
+Model <|-- ResNet
+@enduml

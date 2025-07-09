@@ -15,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
-import org.tensorflow.lite.DataType
 import java.io.File
 
 
@@ -32,7 +31,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val runTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
     private val postTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
     private val datasetChunk: Int by lazy { dataset.size }
-    private val progressPercent:Int by lazy{ datasetChunk/100}
+    private val progressPercent:Int by lazy{ datasetChunk / 100}
     //private val energyConsumption = Array(5000) { 0 }
     private val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
     //private var info = 0f
@@ -71,7 +70,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private suspend fun loop(){
         val modelList = assets.list("models")!!.toList()
         val deviceList = interpreter.getDeviceList()
-        for( i in modelList.indices){
+        for(i in modelList.indices){
             model = when(modelList[i]){
                 "YOLO" -> YOLO(this)
                 "ResNet" -> ResNet(this)
@@ -82,7 +81,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             for (j in modelVariantList.indices){
                 model.setModelVersion(modelVariantList[j])
                 val modelQuantList = assets.list(model.modelRootDir + model.getModelVersion())!!.toList()
-                for(k in modelQuantList.indices){
+                for(k in modelQuantList.indices.reversed()){
                     model.setModelFullPath(modelQuantList[k].toString())
                     model.setModelName(modelQuantList[k].toString().removeSuffix(".tflite"))
                     model.loadModelFile()
@@ -235,6 +234,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                 //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
             //}
         }
+        System.gc()
         writeToFile(outputFilename(),model.serializeResults())
         val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
         val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
@@ -269,7 +269,9 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             }
             file.createNewFile()
             Log.i("FileWrite","Writing output to file...")
-            file.writeText(content)
+            file.bufferedWriter().use { writer ->
+                writer.write(content)
+            }
             if(file.readText()!=content){
                 throw Exception("Error writing output to file, text mismatch")
             }
@@ -341,7 +343,8 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     }
     private fun loadDataset(){
         Log.i(TAG,"Loading dataset...")
-        dataset = assets.open(model.datasetPaths).bufferedReader().readLines()//.take(5)
+        dataset = assets.open(model.datasetPaths).bufferedReader().readLines()
+        // dataset = dataset.take(100)
         Log.i(TAG,"Dataset paths loaded.")
     }
 }

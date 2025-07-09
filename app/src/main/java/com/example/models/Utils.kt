@@ -55,7 +55,7 @@ suspend fun quantize(array: FloatArray,quant:QuantizationParams){
 }
 suspend fun dequantize(array: FloatArray, quant: QuantizationParams){
     parallelArrayOperation(array.size,{ i ->
-        array[i] = array[i] / quant.scale + quant.zeroPoint
+        array[i] = (array[i] - quant.zeroPoint) * quant.scale
     })
 }
 suspend inline fun parallelArrayOperation(size: Int, block:IntConsumer, threads: Int = Runtime.getRuntime().availableProcessors()) {
