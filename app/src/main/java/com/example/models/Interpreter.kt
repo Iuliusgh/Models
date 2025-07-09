@@ -16,15 +16,7 @@ class Interpreter (private val context: Context){
     private var initialized = false
     private val deviceList = queryDeviceCapabilities()
     private lateinit var executingDevice : String
-    /*: Map<Int,String> = mapOf(
-        0 to "CPU - Single core",
-        1 to "CPU - Multicore",
-        2 to "GPU - Float32",
-        3 to "GPU - Float16",
-        4 to "NPU - Int8",
-        5 to "NPU - Float16"
-    )*/
-    private lateinit var interpreterOptions:Interpreter.Options
+    private lateinit var interpreterOptions: Interpreter.Options
     private lateinit var liteRTInterpreter: Interpreter
     data class IOInfo(
         var dataType:DataType,
@@ -36,7 +28,7 @@ class Interpreter (private val context: Context){
     private lateinit var inputBuffer:ByteBuffer
     private lateinit var outputBuffer:ByteBuffer
 
-    private fun queryDeviceCapabilities(): MutableList<String> {
+    private fun queryDeviceCapabilities(): List<String> {
         val deviceCapabilities = mutableListOf("CPU_SC")
         if(getRuntime().availableProcessors()>1){
             deviceCapabilities.add("CPU_MC")
@@ -54,14 +46,15 @@ class Interpreter (private val context: Context){
         if(QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)){
             deviceCapabilities.add("HTP_FP16")
         }
-        return deviceCapabilities
+        return deviceCapabilities.toList()
     }
     fun initializeOptions() {
+
         interpreterOptions = Interpreter.Options()
         interpreterOptions.runtime = InterpreterApi.Options.TfLiteRuntime.FROM_APPLICATION_ONLY
-        interpreterOptions.setAllowBufferHandleOutput(true)
+        //interpreterOptions.setAllowBufferHandleOutput(true)
         interpreterOptions.setUseNNAPI(false)
-        interpreterOptions.setUseXNNPACK(false)
+        interpreterOptions.setAllowBufferHandleOutput(false)
         when (executingDevice) {
             "CPU_SC" -> {
                 interpreterOptions.setUseXNNPACK(true)
@@ -69,14 +62,13 @@ class Interpreter (private val context: Context){
             }
 
             "CPU_MC" -> {
-                interpreterOptions.setUseXNNPACK(true)
+                interpreterOptions.setUseXNNPACK(false)
                 interpreterOptions.setNumThreads(getRuntime().availableProcessors())
             }
 
             else -> {
                 try {
                     interpreterOptions.addDelegate(initQNNDelegate())
-                    Log.i("Interpreter", "QnnDelegate initialized successfully")
                 } catch (e: UnsupportedOperationException) {
                     Log.e("Interpreter", "Error during QnnDelegate initialization\n$e")
                 }
@@ -92,9 +84,9 @@ class Interpreter (private val context: Context){
             liteRTInterpreter.getOutputTensor(0).shape())
     }
     private fun initializeIOBuffers(){
-        inputBuffer = ByteBuffer.allocateDirect(inputInfo.shape.reduce{acc,i -> acc * i} * inputInfo.dataType.byteSize())
+        inputBuffer = ByteBuffer.allocate(inputInfo.shape.reduce{acc,i -> acc * i} * inputInfo.dataType.byteSize())
         inputBuffer.order(ByteOrder.nativeOrder())
-        outputBuffer = ByteBuffer.allocateDirect(outputInfo.shape.reduce{acc,i -> acc * i} * outputInfo.dataType.byteSize())
+        outputBuffer = ByteBuffer.allocate(outputInfo.shape.reduce{acc,i -> acc * i} * outputInfo.dataType.byteSize())
         outputBuffer.order(ByteOrder.nativeOrder())
     }
     fun initializeInterpreter(model:Model){
@@ -114,9 +106,10 @@ class Interpreter (private val context: Context){
     }
     private fun initQNNDelegate(): Delegate {
         val options = QnnDelegate.Options()
-        options.setLogLevel(QnnDelegate.Options.LogLevel.LOG_OFF)
+        options.setLogLevel(QnnDelegate.Options.LogLevel.LOG_LEVEL_ERROR)
         options.skelLibraryDir = context.applicationInfo.nativeLibraryDir
         //options.libraryPath = applicationInfo.nativeLibraryDir
+        options.setProfiling(QnnDelegate.Options.ProfilingOptions.PROFILING_OFF)
         options.cacheDir = context.cacheDir.absolutePath
         when(executingDevice){
             "GPU_FP32" -> {
@@ -138,14 +131,14 @@ class Interpreter (private val context: Context){
                 options.setHtpPrecision(QnnDelegate.Options.HtpPrecision.HTP_PRECISION_QUANTIZED)
                 options.setHtpUseConvHmx(QnnDelegate.Options.HtpUseConvHmx.HTP_CONV_HMX_ON)
                 options.setHtpUseFoldRelu(QnnDelegate.Options.HtpUseFoldRelu.HTP_FOLD_RELU_ON)
-                options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_BURST)
+                options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_SUSTAINED_HIGH_PERFORMANCE)
             }
             "HTP_FP16" -> {
                 options.setBackendType(QnnDelegate.Options.BackendType.HTP_BACKEND)
                 options.setHtpPrecision(QnnDelegate.Options.HtpPrecision.HTP_PRECISION_FP16)
                 options.setHtpUseConvHmx(QnnDelegate.Options.HtpUseConvHmx.HTP_CONV_HMX_ON)
                 options.setHtpUseFoldRelu(QnnDelegate.Options.HtpUseFoldRelu.HTP_FOLD_RELU_ON)
-                options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_BURST)
+                options.setHtpPerformanceMode(QnnDelegate.Options.HtpPerformanceMode.HTP_PERFORMANCE_SUSTAINED_HIGH_PERFORMANCE)
             }
         }
         return  QnnDelegate(options)

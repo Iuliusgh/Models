@@ -15,10 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
-import org.tensorflow.lite.DataType
 import java.io.File
-import kotlin.time.Duration
-import kotlin.time.measureTime
 
 
 class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
@@ -30,13 +27,16 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private var isDeviceSelected = false
     private val placeholder = listOf("---")
     private lateinit var dataset:List<String>
-    private val preTime: Array<Duration> by lazy { Array(dataset.size){Duration.ZERO} }
+    private val preTime: Array<Long> by lazy { Array(dataset.size){-1} }
     private val runTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
-    private val postTime:Array<Duration> by lazy{ Array(dataset.size){Duration.ZERO} }
+    private val postTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
+    private val datasetChunk: Int by lazy { dataset.size }
+    private val progressPercent:Int by lazy{ datasetChunk / 100}
     //private val energyConsumption = Array(5000) { 0 }
     private val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-
-
+    //private var info = 0f
+    private var nanoTik: Long = 0L
+    private var nanoTok: Long = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private suspend fun loop(){
         val modelList = assets.list("models")!!.toList()
         val deviceList = interpreter.getDeviceList()
-        for( i in modelList.indices){
+        for(i in modelList.indices){
             model = when(modelList[i]){
                 "YOLO" -> YOLO(this)
                 "ResNet" -> ResNet(this)
@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             for (j in modelVariantList.indices){
                 model.setModelVersion(modelVariantList[j])
                 val modelQuantList = assets.list(model.modelRootDir + model.getModelVersion())!!.toList()
-                for(k in modelQuantList.indices){
+                for(k in modelQuantList.indices.reversed()){
                     model.setModelFullPath(modelQuantList[k].toString())
                     model.setModelName(modelQuantList[k].toString().removeSuffix(".tflite"))
                     model.loadModelFile()
@@ -99,9 +99,9 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                                 interpreter.close()
                             }
                             interpreter.initializeInterpreter(model)
-                            if(interpreter.getInputDatatype()== DataType.INT16 && l > 1){
-                                break
-                            }
+                            //if(interpreter.getInputDatatype()== DataType.INT16 && l > 1){
+                              //  break
+                            //}
                             model.initializeIO()
                             validate()
                         } catch (e: Exception) {
@@ -109,37 +109,10 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                             continue
                         }
                     }
+                    System.gc()
                 }
             }
         }
-        /*
-        activityMainBinding.modelSelector.onItemSelectedListener!!.onItemSelected(activityMainBinding.modelSelector,activityMainBinding.modelSelector.selectedView,1,activityMainBinding.modelSelector.selectedItemId)
-        activityMainBinding.modelVersionSelector.onItemSelectedListener!!.onItemSelected(activityMainBinding.modelVersionSelector,activityMainBinding.modelVersionSelector.selectedView,1,activityMainBinding.modelVersionSelector.selectedItemId)
-        for(i in 1 until activityMainBinding.modelQuantSelector.adapter.count) {
-            activityMainBinding.modelQuantSelector.onItemSelectedListener!!.onItemSelected(activityMainBinding.modelQuantSelector,activityMainBinding.modelQuantSelector.selectedView,i,activityMainBinding.modelQuantSelector.selectedItemId,)
-            for (j in 1 until activityMainBinding.device.adapter.count) {
-                activityMainBinding.device.onItemSelectedListener!!.onItemSelected(
-                    activityMainBinding.device,
-                    activityMainBinding.device.selectedView,
-                    j,
-                    activityMainBinding.device.selectedItemId
-                )
-                try {
-                    CoroutineScope(Dispatchers.Main).launch {
-                        if (interpreter.isInitialized()) {
-                            interpreter.close()
-                        }
-                        interpreter.initializeInterpreter(model)
-                        model.initializeIO()
-                        validate()
-                    }
-                } catch (e: Exception) {
-                    Log.e("Crash","$e\nSkipping iteration for ${model.getModelName()}_${interpreter.getExecutingDevice()}")
-                    continue
-                }
-            }
-        }
-      */
     }
     private fun initUI(){
         //Button to start the validation
@@ -223,32 +196,31 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
 
     private suspend fun validate() {
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-        val datasetChunk = 5// dataset.size
-        var info = 0f
-        var tik : Int
-        var tok : Int
-        var pre: Duration
-        var post : Duration
+        //var tik : Int
+        //var tok : Int
+        System.gc()
         Log.i(TAG,"Executing ${model.getModelName()} on ${interpreter.getExecutingDevice()}. Starting benchmark...")
         model.clearResultList()
         for (i in 0 until datasetChunk) {
-            preTime[i] = measureTime {
-                model.preprocess(dataset[i])
-                if(interpreter.isInputQuantized()){
-                    quantize(model.modelInput,interpreter.getInputQuant())
-                }
-                array2Buffer(model.modelInput,interpreter.getInputBuffer(),interpreter.getInputDatatype())
+            nanoTik = System.nanoTime()
+            model.preprocess(dataset[i])
+            if(interpreter.isInputQuantized()){
+                quantize(model.modelInput,interpreter.getInputQuant())
             }
+            array2Buffer(model.modelInput,interpreter.getInputBuffer(),interpreter.getInputDatatype())
+            nanoTok = System.nanoTime()
+            preTime[i] = nanoTok-nanoTik
             //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
             interpreter.run()
             //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-            postTime[i] = measureTime {
-                buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
-                if(interpreter.isOutputQuantized()){
-                    dequantize(model.modelOutput,interpreter.getOutputQuant())
-                }
-                model.postprocess()
+            nanoTik=System.nanoTime()
+            buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
+            if(interpreter.isOutputQuantized()){
+                dequantize(model.modelOutput,interpreter.getOutputQuant())
             }
+            model.postprocess()
+            nanoTok = System.nanoTime()
+            postTime[i] = nanoTok-nanoTik
             interpreter.clearIOBuffers()
             model.inferenceOutputToExportFormat()
             //energyConsumption[i] = tok-tik
@@ -256,18 +228,19 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             runTime[i] = interpreter.getInferenceTimeNanoseconds()
             //activityMainBinding.runTimeVal.text=run.toString()
             //activityMainBinding.postTimeVal.text=post.toString()
-            info = (i.toFloat() / datasetChunk * 1e2f)
-            withContext(Dispatchers.Main) {
-                activityMainBinding.progress.text = getString(R.string.progress,info)
+            if(i%progressPercent==0)Log.d("Progress","%.2f %% completed.".format((i.toFloat() / datasetChunk * 1e2f)))
+            //withContext(Dispatchers.Main) {
+                //activityMainBinding.progress.text = getString(R.string.progress,info)
                 //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
-            }
+            //}
         }
+        System.gc()
         writeToFile(outputFilename(),model.serializeResults())
-        val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/datasetChunk
+        val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
         val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
-        val postTimeVal = postTime.reduce { acc, duration -> acc + duration }/datasetChunk
+        val postTimeVal = postTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
         //val energyVal = (energyConsumption.reduce { acc, l -> acc + l }).toFloat()/datasetChunk
-        val time = "$preTimeVal;${runTimeVal}ms;$postTimeVal"
+        val time = "${preTimeVal}ms;${runTimeVal}ms;${postTimeVal}ms"
         writeToFile(outputFilename(true),time,true)
         withContext(Dispatchers.Main) {
             activityMainBinding.progress.text = getString(R.string.completed)
@@ -296,7 +269,9 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             }
             file.createNewFile()
             Log.i("FileWrite","Writing output to file...")
-            file.writeText(content)
+            file.bufferedWriter().use { writer ->
+                writer.write(content)
+            }
             if(file.readText()!=content){
                 throw Exception("Error writing output to file, text mismatch")
             }
@@ -369,6 +344,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private fun loadDataset(){
         Log.i(TAG,"Loading dataset...")
         dataset = assets.open(model.datasetPaths).bufferedReader().readLines()
+        // dataset = dataset.take(100)
         Log.i(TAG,"Dataset paths loaded.")
     }
 }

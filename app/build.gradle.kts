@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    alias(libs.plugins.compose.compiler)
 }
 
 android {
@@ -9,12 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "com.example.models"
-        minSdk = 34
+        minSdk = 33
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -43,9 +42,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
@@ -83,29 +79,27 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.constraintlayout.compose)
     implementation(libs.androidx.appcompat)
-    implementation(libs.androidx.camera.lifecycle)
-    implementation(libs.androidx.camera.view)
-    implementation(libs.androidx.camera.camera2)
-    implementation(libs.camera.core)
     implementation(project(":opencv"))
     implementation(libs.androidx.coordinatorlayout)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.tensorflow.lite.gpu)
-    api(libs.tensorflow.lite.support)
-    implementation(libs.tensorflow.lite.gpu.delegate.plugin)
-    implementation(libs.tensorflow.lite.gpu.api)
-    implementation(libs.tensorflow.lite.metadata)
-    api(libs.tensorflow.lite)
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.ui.test.junit4)
+    //implementation(libs.tensorflow.lite.gpu)
+    //api(libs.tensorflow.lite.support)
+    //implementation(libs.tensorflow.lite.gpu.delegate.plugin)
+    //implementation(libs.tensorflow.lite.gpu.api)
+    //implementation(libs.tensorflow.lite.metadata)
+    //api(libs.tensorflow.lite)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.qnn.runtime)
     implementation(libs.qnn.litert.delegate)
+    implementation(libs.litert)
+    implementation(libs.litert.gpu)
+    implementation(libs.litert.api)
+    implementation(libs.litert.metadata)
+    implementation(libs.litert.support)
+    implementation(libs.litert.support.api)
     //implementation(files("../libs/qtld-release.aar"))
     //implementation(files("../libs/platform-validator.aar"))
     //implementation(files("../libs/snpe-release.aar"))
+
 }

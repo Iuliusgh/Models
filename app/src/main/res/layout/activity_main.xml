@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:background="@color/black"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
     <TextView
+        android:textColor="@color/gray"
         android:id="@+id/modelSelectorText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -15,6 +17,8 @@
         app:layout_constraintEnd_toStartOf="@+id/modelSelector"
         app:layout_constraintStart_toStartOf="parent" />
     <Spinner
+        android:background="@color/gray"
+        android:textColor="@color/gray"
         android:id="@+id/modelSelector"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -23,6 +27,8 @@
         app:layout_constraintStart_toEndOf="@id/modelSelectorText"
         app:layout_constraintTop_toTopOf="parent" />
     <TextView
+        android:textColor="@color/gray"
+
         android:id="@+id/modelVersionSelectorText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -33,6 +39,8 @@
         app:layout_constraintTop_toBottomOf="@id/modelSelectorText" />
 
     <Spinner
+        android:background="@color/gray"
+        android:textColor="@color/gray"
         android:id="@+id/modelVersionSelector"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -41,6 +49,7 @@
         app:layout_constraintStart_toEndOf="@id/modelVersionSelectorText"
         app:layout_constraintTop_toBottomOf="@id/modelSelector" />
     <TextView
+        android:textColor="@color/gray"
         android:id="@+id/modelQuantSelectorText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -51,6 +60,8 @@
         app:layout_constraintTop_toBottomOf="@id/modelVersionSelectorText" />
 
     <Spinner
+        android:background="@color/gray"
+        android:textColor="@color/gray"
         android:id="@+id/modelQuantSelector"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -60,6 +71,7 @@
         app:layout_constraintTop_toBottomOf="@id/modelVersionSelector" />
 
     <TextView
+        android:textColor="@color/gray"
         android:id="@+id/deviceText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -70,6 +82,8 @@
         app:layout_constraintTop_toBottomOf="@+id/modelQuantSelectorText" />
 
     <Spinner
+        android:background="@color/gray"
+        android:textColor="@color/gray"
         android:id="@+id/device"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -121,6 +135,7 @@
             android:weightSum="2">
 
             <TextView
+
                 android:id="@+id/modelName"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -212,11 +227,11 @@
 
 
     <TextView
+        android:textColor="@color/gray"
         android:id="@+id/progress"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Info"
-        android:textColor="@color/black"
         app:layout_constraintBottom_toTopOf="@id/button"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -226,21 +241,15 @@
         android:id="@+id/loopButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:background="@color/gray"
         android:text="Loop"
-        app:layout_constraintBottom_toTopOf="@+id/energyVal"
+        app:layout_constraintBottom_toTopOf="@+id/button"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/progress" />
 
-    <TextView
-        android:id="@id/energyVal"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text=""
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="@+id/loopButton"
-        app:layout_constraintTop_toBottomOf="@id/loopButton" />
     <Button
+        android:background="@color/gray"
         android:id="@+id/button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
