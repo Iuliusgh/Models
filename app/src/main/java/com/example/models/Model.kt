@@ -2,6 +2,7 @@ package com.example.models
 
 import android.content.Context
 import android.util.Log
+import com.google.ai.edge.litert.Model
 import java.io.FileInputStream
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
@@ -24,10 +25,12 @@ open class Model(private val context: Context):ModelInterface {
     private val timeFileExtension = ".csv"
     private lateinit var modelFullPath:String
     private var modelVersion:String = ""
+    private lateinit var loadedModel : Model
 
     fun loadModelFile() {
         loaded = false
         try{
+            loadedModel = Model.load(modelFullPath)
             val fd = context.assets.openFd(modelFullPath)
             val fileChannel = FileInputStream(fd.fileDescriptor).channel
             modelBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY,fd.startOffset,fd.declaredLength)
@@ -39,11 +42,18 @@ open class Model(private val context: Context):ModelInterface {
         }
         loaded = true
     }
+
     fun getModelBuffer():MappedByteBuffer {
         if (!loaded) {
             throw Exception("No model currently loaded.")
         }
         return modelBuffer
+    }
+    fun getLoadedModel(): Model{
+        if (!loaded){
+            throw Exception("No model currently loaded.")
+        }
+        return loadedModel
     }
     fun setIOShape(inShape:IntArray, outShape:IntArray){
         inputShape = inShape

@@ -2,6 +2,7 @@ package com.example.models
 
 import android.content.Context
 import android.util.Log
+import com.google.ai.edge.litert.Accelerator
 import com.qualcomm.qti.QnnDelegate
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Delegate
@@ -11,6 +12,8 @@ import org.tensorflow.lite.Tensor.QuantizationParams
 import java.lang.Runtime.getRuntime
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import com.google.ai.edge.litert.CompiledModel
+import com.google.ai.edge.litert.NpuCompatibilityChecker
 
 class Interpreter (private val context: Context){
     private var initialized = false
@@ -143,6 +146,11 @@ class Interpreter (private val context: Context){
         }
         return  QnnDelegate(options)
     }
+    fun loadModel(model: Model){
+        val mod = CompiledModel.create(model.getLoadedModel(), CompiledModel.Options(Accelerator.CPU))
+        NpuCompatibilityChecker.Qualcomm.isDeviceSupported()
+    }
+
     fun getDeviceList():List<String>{
         return deviceList
     }
