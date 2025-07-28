@@ -36,7 +36,7 @@ androidx-constraintlayout = { group = "androidx.constraintlayout", name = "const
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 litert = { module = "com.google.ai.edge.litert:litert", version.ref = "litert" }
 litert-api = { module = "com.google.ai.edge.litert:litert-api", version.ref = "litertApi" }
-litert-gpu = { module = "com.google.ai.edge.litert:litert-gpu",  version.ref = "litert"}
+litert-gpu = { module = "com.google.ai.edge.litert:litert-gpu",  version.ref = "litertApi"}
 litert-metadata = { module = "com.google.ai.edge.litert:litert-metadata", version.ref = "litertApi" }
 litert-support = { module = "com.google.ai.edge.litert:litert-support", version.ref = "litertApi" }
 litert-support-api = { module = "com.google.ai.edge.litert:litert-support-api", version.ref = "litertApi" }

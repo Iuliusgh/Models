@@ -16,9 +16,11 @@ open class Model(private val context: Context):ModelInterface {
         get() = "datasetPaths/"
     open val exportFileExtension:String
         get() = ""
-    private lateinit var modelBuffer:MappedByteBuffer
-    protected lateinit var inputShape:IntArray
-    protected lateinit var outputShape:IntArray
+    //private lateinit var modelBuffer:MappedByteBuffer
+    open val inputShape:IntArray = intArrayOf(-1)
+    open val outputShape:IntArray = intArrayOf(-1)
+    protected var inputSizeBytes:Int = -1
+    protected var outputSizeBytes:Int = -1
     lateinit var modelInput :FloatArray
     lateinit var modelOutput :FloatArray
     private lateinit var modelName:String
@@ -30,38 +32,44 @@ open class Model(private val context: Context):ModelInterface {
     fun loadModelFile() {
         loaded = false
         try{
-            loadedModel = Model.load(modelFullPath)
-            val fd = context.assets.openFd(modelFullPath)
+            loadedModel = Model.load(context.assets,modelFullPath)
+            /*val fd = context.assets.openFd(modelFullPath)
             val fileChannel = FileInputStream(fd.fileDescriptor).channel
             modelBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY,fd.startOffset,fd.declaredLength)
-            modelBuffer.order(ByteOrder.nativeOrder())
+            modelBuffer.order(ByteOrder.nativeOrder())*/
             Log.i(TAG,"Loaded model $modelName")
         }
-        catch (e:Exception){
+        catch (e: UninitializedPropertyAccessException){
             Log.e(TAG,"Error trying to load model:\n$e")
+            throw e
         }
         loaded = true
     }
-
+/*
     fun getModelBuffer():MappedByteBuffer {
         if (!loaded) {
             throw Exception("No model currently loaded.")
         }
         return modelBuffer
-    }
+    }*/
     fun getLoadedModel(): Model{
         if (!loaded){
             throw Exception("No model currently loaded.")
         }
         return loadedModel
     }
+    fun setIOSize(inSize:Int, outSize:Int){
+        inputSizeBytes = inSize
+        outputSizeBytes = outSize
+    }
+    /*
     fun setIOShape(inShape:IntArray, outShape:IntArray){
         inputShape = inShape
         outputShape = outShape
-    }
-    fun initializeIO(){
-        modelInput = FloatArray(inputShape.reduce{acc,i -> acc * i})
-        modelOutput = FloatArray(outputShape.reduce{acc,i -> acc * i})
+    }*/
+   fun initializeIO(){
+        modelInput = FloatArray(inputSizeBytes/4)
+        modelOutput = FloatArray(outputSizeBytes/4)
     }
     fun getTimeFileExtension():String{
         return timeFileExtension

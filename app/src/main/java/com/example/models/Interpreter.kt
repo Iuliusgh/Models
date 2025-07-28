@@ -3,33 +3,34 @@ package com.example.models
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litert.Accelerator
+import com.google.ai.edge.litert.BuiltinNpuAcceleratorProvider
 import com.qualcomm.qti.QnnDelegate
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Delegate
-import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.InterpreterApi
 import org.tensorflow.lite.Tensor.QuantizationParams
 import java.lang.Runtime.getRuntime
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import com.google.ai.edge.litert.CompiledModel
+import com.google.ai.edge.litert.Environment
 import com.google.ai.edge.litert.NpuCompatibilityChecker
+import com.google.ai.edge.litert.TensorBuffer
+import com.google.ai.edge.litert.TensorBufferRequirements
+import com.google.ai.edge.litert.deployment.AiPackModelProvider
 
 class Interpreter (private val context: Context){
     private var initialized = false
     private val deviceList = queryDeviceCapabilities()
     private lateinit var executingDevice : String
-    private lateinit var interpreterOptions: Interpreter.Options
-    private lateinit var liteRTInterpreter: Interpreter
-    data class IOInfo(
-        var dataType:DataType,
-        var quant:QuantizationParams,
-        var shape:IntArray,
-    )
-    private lateinit var inputInfo:IOInfo
-    private lateinit var outputInfo:IOInfo
-    private lateinit var inputBuffer:ByteBuffer
-    private lateinit var outputBuffer:ByteBuffer
+    private lateinit var lRTOptions: CompiledModel.Options
+    //private lateinit var interpreterOptions: Interpreter.Options
+    private lateinit var liteRTNextModel: CompiledModel
+    //data class IOInfo(var dataType:DataType, var quant:QuantizationParams, var shape:IntArray)
+    private lateinit var inputInfo: TensorBufferRequirements
+    private lateinit var outputInfo: TensorBufferRequirements
+    private lateinit var inputBuffer: List<TensorBuffer>
+    private lateinit var outputBuffer: List<TensorBuffer>
 
     private fun queryDeviceCapabilities(): List<String> {
         val deviceCapabilities = mutableListOf("CPU_SC")
@@ -43,15 +44,15 @@ class Interpreter (private val context: Context){
         if(QnnDelegate.checkCapability(QnnDelegate.Capability.DSP_RUNTIME)){
             deviceCapabilities.add("DSP")
         }
-        if(QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_QUANTIZED)){
-            deviceCapabilities.add("HTP_IQ")
+        if(QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_QUANTIZED) || QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)){
+            deviceCapabilities.add("HTP")
         }
-        if(QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)){
+        /*if(QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)){
             deviceCapabilities.add("HTP_FP16")
-        }
+        }*/
         return deviceCapabilities.toList()
     }
-    fun initializeOptions() {
+    /*fun initializeOptions() {
 
         interpreterOptions = Interpreter.Options()
         interpreterOptions.runtime = InterpreterApi.Options.TfLiteRuntime.FROM_APPLICATION_ONLY
@@ -77,24 +78,73 @@ class Interpreter (private val context: Context){
                 }
             }
         }
+    }*/
+    fun initializeLRTNext(model:Model){
+        var env: Environment = Environment.create()
+        lRTOptions = CompiledModel.Options()
+        when(executingDevice){
+            "CPU_SC" -> {
+                lRTOptions = CompiledModel.Options(Accelerator.CPU)
+                lRTOptions.cpuOptions = CompiledModel.CpuOptions(1)
+            }
+
+            "CPU_MC" -> {
+                lRTOptions = CompiledModel.Options(Accelerator.CPU)
+                lRTOptions.cpuOptions = CompiledModel.CpuOptions(getRuntime().availableProcessors())
+            }
+            "GPU_FP32" -> {
+                lRTOptions = CompiledModel.Options(Accelerator.GPU)
+                lRTOptions.gpuOptions = CompiledModel.GpuOptions(precision = CompiledModel.GpuOptions.Precision.FP32)
+            }
+
+            "GPU_FP16" -> {
+                lRTOptions = CompiledModel.Options(Accelerator.GPU)
+                lRTOptions.gpuOptions = CompiledModel.GpuOptions(precision = CompiledModel.GpuOptions.Precision.FP16)
+            }
+            "HTP" -> {
+                lRTOptions = CompiledModel.Options(Accelerator.NPU)
+                env = Environment.create(BuiltinNpuAcceleratorProvider(context))
+            }
+        }
+        try {
+            liteRTNextModel = CompiledModel.create(model.getLoadedModel(),lRTOptions,env)
+            Log.i("Interpreter","Interpreter instantiated successfully.")
+        }
+        catch (e: Exception){
+            Log.e("Interpreter","Cannot initialize with selected options.",e)
+            throw e
+        }
+        initializeIOBuffers()
+        initializeIOInfo()
+        Log.i("Interpreter","Initialized input and output buffers")
+        model.setIOSize(inputInfo.bufferSize(),outputInfo.bufferSize())
     }
-    private fun initializeIOInfo(){
+   private fun initializeIOInfo(){
+        inputInfo = liteRTNextModel.getInputBufferRequirements("inputs_0")
+       Log.i("InputBuffer","Input Buffer size: ${inputInfo.bufferSize()}; Strides: ${inputInfo.strides().joinToString()}; Supported types: ${inputInfo.supportedTypes().joinToString()}")
+        outputInfo = liteRTNextModel.getOutputBufferRequirements("Identity")
+       Log.i("OutputBuffer","Output Buffer size: ${outputInfo.bufferSize()}; Strides: ${outputInfo.strides().joinToString()}; Supported types: ${outputInfo.supportedTypes().joinToString()}")
+
+        /*
         inputInfo = IOInfo(liteRTInterpreter.getInputTensor(0).dataType(),
             liteRTInterpreter.getInputTensor(0).quantizationParams(),
             liteRTInterpreter.getInputTensor(0).shape())
         outputInfo= IOInfo(liteRTInterpreter.getOutputTensor(0).dataType(),
             liteRTInterpreter.getOutputTensor(0).quantizationParams(),
-            liteRTInterpreter.getOutputTensor(0).shape())
+            liteRTInterpreter.getOutputTensor(0).shape())*/
     }
     private fun initializeIOBuffers(){
+        inputBuffer = liteRTNextModel.createInputBuffers()
+        outputBuffer = liteRTNextModel.createOutputBuffers()
+        /*
         inputBuffer = ByteBuffer.allocate(inputInfo.shape.reduce{acc,i -> acc * i} * inputInfo.dataType.byteSize())
         inputBuffer.order(ByteOrder.nativeOrder())
         outputBuffer = ByteBuffer.allocate(outputInfo.shape.reduce{acc,i -> acc * i} * outputInfo.dataType.byteSize())
-        outputBuffer.order(ByteOrder.nativeOrder())
+        outputBuffer.order(ByteOrder.nativeOrder())*/
     }
-    fun initializeInterpreter(model:Model){
+    /*fun initializeInterpreter(model:Model){
         try {
-            liteRTInterpreter = Interpreter(model.getModelBuffer(), interpreterOptions)
+            //liteRTInterpreter = Interpreter(model.getModelBuffer(), interpreterOptions)
             Log.i("Interpreter","Interpreter instantiated successfully.")
             initialized=true
         }
@@ -106,7 +156,7 @@ class Interpreter (private val context: Context){
         initializeIOBuffers()
         model.setIOShape(inputInfo.shape,outputInfo.shape)
         Log.i("Interpreter","Initialized input and output buffers")
-    }
+    }*/
     private fun initQNNDelegate(): Delegate {
         val options = QnnDelegate.Options()
         options.setLogLevel(QnnDelegate.Options.LogLevel.LOG_LEVEL_ERROR)
@@ -146,11 +196,6 @@ class Interpreter (private val context: Context){
         }
         return  QnnDelegate(options)
     }
-    fun loadModel(model: Model){
-        val mod = CompiledModel.create(model.getLoadedModel(), CompiledModel.Options(Accelerator.CPU))
-        NpuCompatibilityChecker.Qualcomm.isDeviceSupported()
-    }
-
     fun getDeviceList():List<String>{
         return deviceList
     }
@@ -159,16 +204,19 @@ class Interpreter (private val context: Context){
     }
     fun close(){
         if(initialized){
-            liteRTInterpreter.close()
+            inputBuffer.forEach {  it.close() }
+            outputBuffer.forEach {  it.close() }
+            liteRTNextModel.close()
         }
         initialized=false
     }
     fun run(){
-        liteRTInterpreter.run(inputBuffer,outputBuffer)
+        liteRTNextModel.run(inputBuffer,outputBuffer)
     }
     fun selectExecutionDevice(device:Int){
         executingDevice=deviceList[device]
     }
+    /*
     fun isInputQuantized():Boolean{
         return inputInfo.quant.scale != 0.0f
     }
@@ -193,12 +241,19 @@ class Interpreter (private val context: Context){
     fun getOutputBuffer():ByteBuffer{
         return outputBuffer
     }
-    fun clearIOBuffers(){
+   fun clearIOBuffers(){
         inputBuffer.clear()
         outputBuffer.clear()
     }
+
     fun getInferenceTimeNanoseconds():Long{
-        return liteRTInterpreter.lastNativeInferenceDurationNanoseconds
+        return liteRTNextModel.lastNativeInferenceDurationNanoseconds
+    }*/
+    fun writeInputBuffer(input: FloatArray){
+        inputBuffer[0].writeFloat(input)
+    }
+    fun readOutputBuffer(): FloatArray{
+        return outputBuffer[0].readFloat()
     }
     fun getExecutingDevice():String{
         return executingDevice

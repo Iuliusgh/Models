@@ -97,7 +97,9 @@ class YOLO(context: Context) : Model(context) {
     override val exportFileExtension = ".json"
     private val iou = 0.7f
     private val confidence = 0.001f
-    private val inputSize:Int by lazy {inputShape[1]}
+    private val inputImgSideSize:Int = 640//by lazy {inputShape[1]}
+    override val inputShape: IntArray = intArrayOf(1,3,inputImgSideSize,inputImgSideSize) //(B,C,W,H)
+    override val outputShape: IntArray = intArrayOf(1,84,8400) // (1, 84, 8400) YOLOv8 & YOLO11
     private val padFillValue = Scalar(114.0, 114.0, 114.0, 0.0)
     private lateinit var resizeRatio: Pair<Float, Float>
     private lateinit var resizePad: Pair<Int, Int>//left,top
@@ -116,11 +118,11 @@ class YOLO(context: Context) : Model(context) {
         val mat = Imgcodecs.imread(imgPath.toString(), Imgcodecs.IMREAD_COLOR)
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_BGR2RGB)
         originalImgShape = mat.size()
-        val r = minOf(inputSize / originalImgShape.width, inputSize / originalImgShape.height).toFloat()
+        val r = minOf(inputImgSideSize / originalImgShape.width, inputImgSideSize / originalImgShape.height).toFloat()
         resizeRatio = Pair(r, r)
         val newShape = org.opencv.core.Size(round(originalImgShape.width * r), round(originalImgShape.height * r))
-        val wpad = (inputSize - newShape.width) / 2
-        val hpad = (inputSize - newShape.height) / 2
+        val wpad = (inputImgSideSize - newShape.width) / 2
+        val hpad = (inputImgSideSize - newShape.height) / 2
         val top = round(hpad - 0.1).toInt()
         val bottom = round(hpad + 0.1).toInt()
         val left = round(wpad - 0.1).toInt()
@@ -161,7 +163,7 @@ class YOLO(context: Context) : Model(context) {
         //1D array to [1][8400][84]
        parallelArrayOperation(modelOutput.size,{ i ->
             if(i<outputShape[2]*4) {
-                nmsReshapedInput[0][i % outputShape[2]][(i / outputShape[2]) % outputShape[1]] = modelOutput[i] * inputSize.toFloat()
+                nmsReshapedInput[0][i % outputShape[2]][(i / outputShape[2]) % outputShape[1]] = modelOutput[i] * inputImgSideSize.toFloat()
             }
             else{
                 nmsReshapedInput[0][i % outputShape[2]][(i / outputShape[2]) % outputShape[1]] = modelOutput[i]

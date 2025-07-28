@@ -58,6 +58,7 @@ suspend fun dequantize(array: FloatArray, quant: QuantizationParams){
         array[i] = (array[i] - quant.zeroPoint) * quant.scale
     })
 }
+
 suspend inline fun parallelArrayOperation(size: Int, block:IntConsumer, threads: Int = Runtime.getRuntime().availableProcessors()) {
     val chunkSize: Int = size / threads
     coroutineScope {

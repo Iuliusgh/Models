@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
+import org.tensorflow.lite.DataType
 import java.io.File
 
 
@@ -30,7 +31,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
     private val preTime: Array<Long> by lazy { Array(dataset.size){-1} }
     private val runTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
     private val postTime:Array<Long> by lazy{ Array(dataset.size){-1L} }
-    private val datasetChunk: Int by lazy { dataset.size }
+    private val datasetChunk: Int  by lazy { dataset.size }
     private val progressPercent:Int by lazy{ datasetChunk / 100}
     //private val energyConsumption = Array(5000) { 0 }
     private val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
@@ -87,18 +88,18 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                     model.loadModelFile()
                     for(l in deviceList.indices){
                         interpreter.selectExecutionDevice(l)
-                        try{
+                        /*try{
                             interpreter.initializeOptions()
                         }
                         catch (e:Exception){
                             Log.e(TAG,"Invalid interpreter options, skipping iteration")
                             continue
-                        }
+                        }*/
                         try {
                             if (interpreter.isInitialized()) {
                                 interpreter.close()
                             }
-                            interpreter.initializeInterpreter(model)
+                            interpreter.initializeLRTNext(model)
                             //if(interpreter.getInputDatatype()== DataType.INT16 && l > 1){
                               //  break
                             //}
@@ -122,7 +123,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                     if (interpreter.isInitialized()) {
                         interpreter.close()
                     }
-                    interpreter.initializeInterpreter(model)
+                    interpreter.initializeLRTNext(model)
                 }
                 catch (e:Exception){
                     Log.e(TAG,"$e")
@@ -178,7 +179,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                 activityMainBinding.device.id -> {
                     interpreter.selectExecutionDevice(position - 1)
                     try{
-                        interpreter.initializeOptions()
+                        //interpreter.initializeOptions()
                         //activityMainBinding.datatypeText.text = dataType.toString()
                         isDeviceSelected=true
                     }
@@ -201,31 +202,36 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         System.gc()
         Log.i(TAG,"Executing ${model.getModelName()} on ${interpreter.getExecutingDevice()}. Starting benchmark...")
         model.clearResultList()
-        for (i in 0 until datasetChunk) {
+        for (i in 0 until 100) {
             nanoTik = System.nanoTime()
             model.preprocess(dataset[i])
-            if(interpreter.isInputQuantized()){
+            /*if(interpreter.isInputQuantized()){
                 quantize(model.modelInput,interpreter.getInputQuant())
-            }
-            array2Buffer(model.modelInput,interpreter.getInputBuffer(),interpreter.getInputDatatype())
+            }*/
+            //array2Buffer(model.modelInput,interpreter.getInputBuffer(), DataType.FLOAT32)
+            interpreter.writeInputBuffer(model.modelInput)
             nanoTok = System.nanoTime()
             preTime[i] = nanoTok-nanoTik
             //tik = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            nanoTik=System.nanoTime()
             interpreter.run()
+            nanoTok = System.nanoTime()
+            runTime[i] = nanoTok-nanoTik
             //tok = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
             nanoTik=System.nanoTime()
-            buffer2Array(interpreter.getOutputBuffer(),model.modelOutput,interpreter.getOutputDatatype())
-            if(interpreter.isOutputQuantized()){
+            model.modelOutput = interpreter.readOutputBuffer()
+            //buffer2Array(interpreter.readOutputBuffer(),model.modelOutput, DataType.FLOAT32)
+            /*if(interpreter.isOutputQuantized()){
                 dequantize(model.modelOutput,interpreter.getOutputQuant())
-            }
+            }*/
             model.postprocess()
             nanoTok = System.nanoTime()
             postTime[i] = nanoTok-nanoTik
-            interpreter.clearIOBuffers()
+            //interpreter.clearIOBuffers()
             model.inferenceOutputToExportFormat()
             //energyConsumption[i] = tok-tik
             //activityMainBinding.preTimeVal.text=pre.toString()
-            runTime[i] = interpreter.getInferenceTimeNanoseconds()
+            //runTime[i] = interpreter.getInferenceTimeNanoseconds()
             //activityMainBinding.runTimeVal.text=run.toString()
             //activityMainBinding.postTimeVal.text=post.toString()
             if(i%progressPercent==0)Log.d("Progress","%.2f %% completed.".format((i.toFloat() / datasetChunk * 1e2f)))
