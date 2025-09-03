@@ -2,6 +2,7 @@ package com.example.models
 
 import android.content.Context
 import android.util.Log
+import androidx.compose.runtime.internal.isLiveLiteralsEnabled
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.BuiltinNpuAcceleratorProvider
 import com.qualcomm.qti.QnnDelegate
@@ -17,7 +18,7 @@ import com.google.ai.edge.litert.Environment
 import com.google.ai.edge.litert.NpuCompatibilityChecker
 import com.google.ai.edge.litert.TensorBuffer
 import com.google.ai.edge.litert.TensorBufferRequirements
-import com.google.ai.edge.litert.deployment.AiPackModelProvider
+import com.google.ai.edge.litert.TensorType
 
 
 class Interpreter (private val context: Context){
@@ -116,15 +117,14 @@ class Interpreter (private val context: Context){
             throw e
         }
         initializeIOBuffers()
-        initializeIOInfo()
+        model.setLayout()
         Log.i("Interpreter","Initialized input and output buffers")
-        model.setIOSize(inputInfo.bufferSize(),outputInfo.bufferSize())
     }
    private fun initializeIOInfo(){
-        inputInfo = liteRTNextModel.getInputBufferRequirements("inputs_0")
-       Log.i("InputBuffer","Input Buffer size: ${inputInfo.bufferSize()}; Strides: ${inputInfo.strides().joinToString()}; Supported types: ${inputInfo.supportedTypes().joinToString()}")
+       inputInfo = liteRTNextModel.getInputBufferRequirements("inputs_0")
+       Log.i("InputBuffer","Input Buffer size: ${inputInfo.bufferSize}; Strides: ${inputInfo.strides.joinToString()}; Supported types: ${inputInfo.supportedTypes.joinToString()}")
         outputInfo = liteRTNextModel.getOutputBufferRequirements("Identity")
-       Log.i("OutputBuffer","Output Buffer size: ${outputInfo.bufferSize()}; Strides: ${outputInfo.strides().joinToString()}; Supported types: ${outputInfo.supportedTypes().joinToString()}")
+       Log.i("OutputBuffer","Output Buffer size: ${outputInfo.bufferSize}; Strides: ${outputInfo.strides.joinToString()}; Supported types: ${outputInfo.supportedTypes.joinToString()}")
 
         /*
         inputInfo = IOInfo(liteRTInterpreter.getInputTensor(0).dataType(),

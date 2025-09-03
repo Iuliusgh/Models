@@ -98,8 +98,8 @@ class YOLO(context: Context) : Model(context) {
     private val iou = 0.7f
     private val confidence = 0.001f
     private val inputImgSideSize:Int = 640//by lazy {inputShape[1]}
-    override val inputShape: IntArray = intArrayOf(1,3,inputImgSideSize,inputImgSideSize) //(B,C,W,H)
-    override val outputShape: IntArray = intArrayOf(1,84,8400) // (1, 84, 8400) YOLOv8 & YOLO11
+    //override val inputShape: IntArray = intArrayOf(1,3,inputImgSideSize,inputImgSideSize) //(B,C,W,H)
+    //override val outputShape: IntArray = intArrayOf(1,84,8400) // (1, 84, 8400) YOLOv8 & YOLO11
     private val padFillValue = Scalar(114.0, 114.0, 114.0, 0.0)
     private lateinit var resizeRatio: Pair<Float, Float>
     private lateinit var resizePad: Pair<Int, Int>//left,top

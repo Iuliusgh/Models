@@ -17,10 +17,8 @@ open class Model(private val context: Context):ModelInterface {
     open val exportFileExtension:String
         get() = ""
     //private lateinit var modelBuffer:MappedByteBuffer
-    open val inputShape:IntArray = intArrayOf(-1)
-    open val outputShape:IntArray = intArrayOf(-1)
-    protected var inputSizeBytes:Int = -1
-    protected var outputSizeBytes:Int = -1
+    lateinit var inputShape : List<Int>
+    lateinit var outputShape : List<Int>
     lateinit var modelInput :FloatArray
     lateinit var modelOutput :FloatArray
     private lateinit var modelName:String
@@ -45,6 +43,10 @@ open class Model(private val context: Context):ModelInterface {
         }
         loaded = true
     }
+    fun setLayout(){
+        inputShape = loadedModel.getInputTensorType("input").layout!!.dimensions
+        outputShape = loadedModel.getOutputTensorType("output").layout!!.dimensions
+    }
 /*
     fun getModelBuffer():MappedByteBuffer {
         if (!loaded) {
@@ -58,18 +60,14 @@ open class Model(private val context: Context):ModelInterface {
         }
         return loadedModel
     }
-    fun setIOSize(inSize:Int, outSize:Int){
-        inputSizeBytes = inSize
-        outputSizeBytes = outSize
-    }
     /*
     fun setIOShape(inShape:IntArray, outShape:IntArray){
         inputShape = inShape
         outputShape = outShape
     }*/
    fun initializeIO(){
-        modelInput = FloatArray(inputSizeBytes/4)
-        modelOutput = FloatArray(outputSizeBytes/4)
+        modelInput = FloatArray(inputShape.reduce{acc,i -> acc * i})
+        modelOutput = FloatArray(outputShape.reduce{acc,i -> acc * i})
     }
     fun getTimeFileExtension():String{
         return timeFileExtension
