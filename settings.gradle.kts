@@ -3,10 +3,6 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        mavenCentral()
-        flatDir {
-            dirs("src/main/jniLibs")
-        }
     }
 }
 dependencyResolutionManagement {

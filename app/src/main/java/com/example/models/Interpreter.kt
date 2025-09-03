@@ -19,6 +19,7 @@ import com.google.ai.edge.litert.TensorBuffer
 import com.google.ai.edge.litert.TensorBufferRequirements
 import com.google.ai.edge.litert.deployment.AiPackModelProvider
 
+
 class Interpreter (private val context: Context){
     private var initialized = false
     private val deviceList = queryDeviceCapabilities()

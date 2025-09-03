@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.models"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.models"
@@ -30,7 +30,6 @@ android {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             ndk {
-                //noinspection ChromeOsAbiSupport
                 abiFilters += listOf("arm64-v8a","x86_64")
             }
         }
@@ -57,7 +56,7 @@ android {
         }
         jniLibs.useLegacyPackaging = true
     }
-    ndkVersion = "28.0.12433566 rc1"
+    //ndkVersion = "28.0.12433566"
     sourceSets{
         getByName("main") {
             jniLibs.srcDirs("src/msin/jniLibs")
@@ -82,22 +81,15 @@ dependencies {
     implementation(project(":opencv"))
     implementation(libs.androidx.coordinatorlayout)
     implementation(libs.kotlinx.serialization.json)
-    //implementation(libs.tensorflow.lite.gpu)
-    //api(libs.tensorflow.lite.support)
-    //implementation(libs.tensorflow.lite.gpu.delegate.plugin)
-    //implementation(libs.tensorflow.lite.gpu.api)
-    //implementation(libs.tensorflow.lite.metadata)
-    //api(libs.tensorflow.lite)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.qnn.runtime)
     implementation(libs.qnn.litert.delegate)
     implementation(libs.litert)
-    implementation(libs.litert.gpu)
-    implementation(libs.litert.api)
-    implementation(libs.litert.metadata)
+    //implementation(libs.litert.gpu)
+    //implementation(libs.litert.api)
+    //implementation(libs.litert.metadata)
     implementation(libs.litert.support)
-    implementation(libs.litert.support.api)
     //implementation(files("../libs/qtld-release.aar"))
     //implementation(files("../libs/platform-validator.aar"))
     //implementation(files("../libs/snpe-release.aar"))
