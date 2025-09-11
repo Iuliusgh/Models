@@ -17,10 +17,8 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-        ndk {
-            //noinspection ChromeOsAbiSupport
-            abiFilters += listOf("arm64-v8a", "x86_64")
-        }
+        ndk { abiFilters.add("arm64-v8a") }
+        packaging { jniLibs { useLegacyPackaging = true } }
     }
     dataBinding{
         enable = true
@@ -29,13 +27,12 @@ android {
         debug{
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            ndk {
-                abiFilters += listOf("arm64-v8a","x86_64")
-            }
+            ndk { abiFilters.add("arm64-v8a") }
         }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            ndk { abiFilters.add("arm64-v8a") }
         }
     }
     compileOptions {
@@ -57,12 +54,12 @@ android {
         jniLibs.useLegacyPackaging = true
     }
     //ndkVersion = "28.0.12433566"
-    sourceSets{
+    /*sourceSets{
         getByName("main") {
-            jniLibs.srcDirs("src/msin/jniLibs")
+            jniLibs.srcDirs("src/main/jniLibs")
         }
-    }
-
+    }*/
+    dynamicFeatures.add(":litert_npu_runtime_libraries:qualcomm_runtime_v73")
 }
 
 dependencies {
@@ -79,6 +76,7 @@ dependencies {
     implementation(libs.androidx.constraintlayout.compose)
     implementation(libs.androidx.appcompat)
     implementation(project(":opencv"))
+    implementation(project(":litert_npu_runtime_libraries:runtime_strings"))
     implementation(libs.androidx.coordinatorlayout)
     implementation(libs.kotlinx.serialization.json)
     debugImplementation(libs.androidx.ui.tooling)

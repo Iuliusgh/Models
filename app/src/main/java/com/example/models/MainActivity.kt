@@ -199,7 +199,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         //val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
         //var tik : Int
         //var tok : Int
-        System.gc()
+        //System.gc()
         Log.i(TAG,"Executing ${model.getModelName()} on ${interpreter.getExecutingDevice()}. Starting benchmark...")
         model.clearResultList()
         for (i in 0 until 100) {
@@ -240,7 +240,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                 //activityMainBinding.energyVal.text= "${energyConsumption[i]} mAh"
             //}
         }
-        System.gc()
+        //System.gc()
         writeToFile(outputFilename(),model.serializeResults())
         val preTimeVal = preTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)
         val runTimeVal = runTime.reduce { acc, duration -> acc + duration }/(datasetChunk*1e6)

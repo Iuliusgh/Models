@@ -1,0 +1,1 @@
+int string title_qualcomm_runtime_v73 0x0

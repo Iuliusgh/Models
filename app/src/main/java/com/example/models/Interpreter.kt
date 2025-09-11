@@ -15,10 +15,14 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import com.google.ai.edge.litert.CompiledModel
 import com.google.ai.edge.litert.Environment
+import com.google.ai.edge.litert.ModelProvider
+import com.google.ai.edge.litert.ModelSelector
+import com.google.ai.edge.litert.NpuAcceleratorProvider
 import com.google.ai.edge.litert.NpuCompatibilityChecker
 import com.google.ai.edge.litert.TensorBuffer
 import com.google.ai.edge.litert.TensorBufferRequirements
 import com.google.ai.edge.litert.TensorType
+import com.google.ai.edge.litert.deployment.AiPackModelProvider
 
 
 class Interpreter (private val context: Context){
@@ -33,6 +37,8 @@ class Interpreter (private val context: Context){
     private lateinit var outputInfo: TensorBufferRequirements
     private lateinit var inputBuffer: List<TensorBuffer>
     private lateinit var outputBuffer: List<TensorBuffer>
+    private lateinit var env:Environment
+    private lateinit var modelProvider: ModelProvider
 
     private fun queryDeviceCapabilities(): List<String> {
         val deviceCapabilities = mutableListOf("CPU_SC")
@@ -81,36 +87,44 @@ class Interpreter (private val context: Context){
             }
         }
     }*/
-    fun initializeLRTNext(model:Model){
-        var env: Environment = Environment.create()
+    suspend fun initializeLRTNext(model:Model){
+        env = Environment.create(BuiltinNpuAcceleratorProvider(context))
+            //options = mapOf<Environment.Option,String>(Environment.Option.DispatchLibraryDir to context.applicationInfo.nativeLibraryDir))
         lRTOptions = CompiledModel.Options()
+        var acc = Accelerator.NPU
         when(executingDevice){
             "CPU_SC" -> {
-                lRTOptions = CompiledModel.Options(Accelerator.CPU)
+                //lRTOptions = CompiledModel.Options(Accelerator.CPU)
                 lRTOptions.cpuOptions = CompiledModel.CpuOptions(1)
             }
 
             "CPU_MC" -> {
-                lRTOptions = CompiledModel.Options(Accelerator.CPU)
+                //lRTOptions = CompiledModel.Options(Accelerator.CPU)
                 lRTOptions.cpuOptions = CompiledModel.CpuOptions(getRuntime().availableProcessors())
             }
             "GPU_FP32" -> {
-                lRTOptions = CompiledModel.Options(Accelerator.GPU)
+                acc = Accelerator.GPU
+                //lRTOptions = CompiledModel.Options(Accelerator.GPU)
                 lRTOptions.gpuOptions = CompiledModel.GpuOptions(precision = CompiledModel.GpuOptions.Precision.FP32)
             }
 
             "GPU_FP16" -> {
-                lRTOptions = CompiledModel.Options(Accelerator.GPU)
+                acc = Accelerator.GPU
+                //lRTOptions = CompiledModel.Options(Accelerator.GPU)
                 lRTOptions.gpuOptions = CompiledModel.GpuOptions(precision = CompiledModel.GpuOptions.Precision.FP16)
             }
             "HTP" -> {
-                lRTOptions = CompiledModel.Options(Accelerator.NPU)
-                env = Environment.create(BuiltinNpuAcceleratorProvider(context))
+                acc = Accelerator.NPU
+                //Log.i("NPU","Is compatible? : " + NpuCompatibilityChecker.Qualcomm.isDeviceSupported().toString())
+                //lRTOptions = CompiledModel.Options(Accelerator.NPU)
             }
         }
         try {
-            liteRTNextModel = CompiledModel.create(model.getLoadedModel(),lRTOptions,env)
+            modelProvider = ModelProvider.staticModel(ModelProvider.Type.ASSET,"models/YOLO/yolov8m/yolov8m_float32_Qualcomm_SM8550_apply_plugin.tflite",Accelerator.NPU)
+            val mod = ModelSelector(modelProvider).selectModel(env)
+            liteRTNextModel = CompiledModel.create(context.assets,mod.getPath(), CompiledModel.Options(Accelerator.NPU))
             Log.i("Interpreter","Interpreter instantiated successfully.")
+            initialized=true
         }
         catch (e: Exception){
             Log.e("Interpreter","Cannot initialize with selected options.",e)

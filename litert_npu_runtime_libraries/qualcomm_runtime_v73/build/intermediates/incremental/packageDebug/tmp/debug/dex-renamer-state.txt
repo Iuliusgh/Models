@@ -1,0 +1,4 @@
+#Wed Sep 10 10:55:21 CEST 2025
+base.0=/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/build/intermediates/dex/debug/mergeProjectDexDebug/0/classes.dex
+renamed.0=classes.dex
+path.0=0/classes.dex

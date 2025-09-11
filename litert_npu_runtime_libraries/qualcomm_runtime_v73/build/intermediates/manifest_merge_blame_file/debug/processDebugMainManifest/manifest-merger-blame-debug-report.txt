@@ -1,0 +1,45 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    xmlns:dist="http://schemas.android.com/apk/distribution"
+4    featureSplit="qualcomm_runtime_v73"
+5    package="com.example.models"
+6    android:versionCode="1"
+7    android:versionName="1.0" >
+8
+9    <uses-sdk
+10        android:minSdkVersion="31"
+11        android:targetSdkVersion="31" />
+12
+13    <dist:module
+13-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:5:5-18:19
+14        dist:instant="false"
+14-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:6:9-29
+15        dist:title="@string/title_qualcomm_runtime_v73" >
+15-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:7:9-56
+16        <dist:delivery>
+16-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:8:9-16:25
+17            <dist:install-time>
+17-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:9:13-15:33
+18                <dist:conditions>
+18-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:10:17-14:35
+19                    <dist:device-groups>
+19-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:11:21-13:42
+20                        <dist:device-group dist:name="Qualcomm_SM8550" />
+20-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:12:25-73
+20-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:12:44-71
+21                    </dist:device-groups>
+22                </dist:conditions>
+23            </dist:install-time>
+24        </dist:delivery>
+25
+26        <dist:fusing dist:include="true" />
+26-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:17:9-44
+26-->/home/iulius/AndroidStudioProjects/Models/litert_npu_runtime_libraries/qualcomm_runtime_v73/src/main/AndroidManifest.xml:17:22-41
+27    </dist:module>
+28
+29    <application
+30        android:debuggable="true"
+31        android:extractNativeLibs="false"
+32        android:testOnly="true" />
+33
+34</manifest>

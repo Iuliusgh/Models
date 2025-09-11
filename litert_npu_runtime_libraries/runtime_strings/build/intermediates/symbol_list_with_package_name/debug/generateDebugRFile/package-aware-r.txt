@@ -1,0 +1,2 @@
+com.google.ai.edge.litert.runtime_strings
+string title_qualcomm_runtime_v73
