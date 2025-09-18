@@ -15,12 +15,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Models"
         >
-        <!--uses-native-library
+        <uses-native-library
             android:name="libcdsprpc.so"
             android:required="true"/>
         <uses-native-library
             android:name="libOpenCL.so"
-            android:required="false"/-->
+            android:required="true"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

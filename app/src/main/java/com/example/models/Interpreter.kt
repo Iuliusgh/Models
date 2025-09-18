@@ -38,7 +38,6 @@ class Interpreter (private val context: Context){
     private lateinit var inputBuffer: List<TensorBuffer>
     private lateinit var outputBuffer: List<TensorBuffer>
     private lateinit var env:Environment
-    private lateinit var modelProvider: ModelProvider
 
     private fun queryDeviceCapabilities(): List<String> {
         val deviceCapabilities = mutableListOf("CPU_SC")
@@ -87,42 +86,35 @@ class Interpreter (private val context: Context){
             }
         }
     }*/
-    suspend fun initializeLRTNext(model:Model){
+    fun initializeLRTNext(model:Model){
         env = Environment.create(BuiltinNpuAcceleratorProvider(context))
             //options = mapOf<Environment.Option,String>(Environment.Option.DispatchLibraryDir to context.applicationInfo.nativeLibraryDir))
-        lRTOptions = CompiledModel.Options()
-        var acc = Accelerator.NPU
         when(executingDevice){
             "CPU_SC" -> {
-                //lRTOptions = CompiledModel.Options(Accelerator.CPU)
+                lRTOptions = CompiledModel.Options(Accelerator.CPU)
                 lRTOptions.cpuOptions = CompiledModel.CpuOptions(1)
             }
 
             "CPU_MC" -> {
-                //lRTOptions = CompiledModel.Options(Accelerator.CPU)
+                lRTOptions = CompiledModel.Options(Accelerator.CPU)
                 lRTOptions.cpuOptions = CompiledModel.CpuOptions(getRuntime().availableProcessors())
             }
             "GPU_FP32" -> {
-                acc = Accelerator.GPU
-                //lRTOptions = CompiledModel.Options(Accelerator.GPU)
+                lRTOptions = CompiledModel.Options(Accelerator.GPU)
                 lRTOptions.gpuOptions = CompiledModel.GpuOptions(precision = CompiledModel.GpuOptions.Precision.FP32)
             }
 
             "GPU_FP16" -> {
-                acc = Accelerator.GPU
-                //lRTOptions = CompiledModel.Options(Accelerator.GPU)
+                lRTOptions = CompiledModel.Options(Accelerator.GPU)
                 lRTOptions.gpuOptions = CompiledModel.GpuOptions(precision = CompiledModel.GpuOptions.Precision.FP16)
             }
             "HTP" -> {
-                acc = Accelerator.NPU
                 //Log.i("NPU","Is compatible? : " + NpuCompatibilityChecker.Qualcomm.isDeviceSupported().toString())
-                //lRTOptions = CompiledModel.Options(Accelerator.NPU)
+                lRTOptions = CompiledModel.Options(Accelerator.NPU)
             }
         }
         try {
-            modelProvider = ModelProvider.staticModel(ModelProvider.Type.ASSET,"models/YOLO/yolov8m/yolov8m_float32_Qualcomm_SM8550_apply_plugin.tflite",Accelerator.NPU)
-            val mod = ModelSelector(modelProvider).selectModel(env)
-            liteRTNextModel = CompiledModel.create(context.assets,mod.getPath(), CompiledModel.Options(Accelerator.NPU))
+            liteRTNextModel = CompiledModel.create(model.getLoadedModel(), lRTOptions,env)
             Log.i("Interpreter","Interpreter instantiated successfully.")
             initialized=true
         }

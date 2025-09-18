@@ -44,8 +44,8 @@ open class Model(private val context: Context):ModelInterface {
         loaded = true
     }
     fun setLayout(){
-        inputShape = loadedModel.getInputTensorType("input").layout!!.dimensions
-        outputShape = loadedModel.getOutputTensorType("output").layout!!.dimensions
+        inputShape = loadedModel.getInputTensorType("args_0").layout!!.dimensions
+        outputShape = loadedModel.getOutputTensorType("output_0").layout!!.dimensions
     }
 /*
     fun getModelBuffer():MappedByteBuffer {
