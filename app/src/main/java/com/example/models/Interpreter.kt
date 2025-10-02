@@ -2,7 +2,6 @@ package com.example.models
 
 import android.content.Context
 import android.util.Log
-import androidx.compose.runtime.internal.isLiveLiteralsEnabled
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.BuiltinNpuAcceleratorProvider
 import com.qualcomm.qti.QnnDelegate
@@ -22,7 +21,6 @@ import com.google.ai.edge.litert.NpuCompatibilityChecker
 import com.google.ai.edge.litert.TensorBuffer
 import com.google.ai.edge.litert.TensorBufferRequirements
 import com.google.ai.edge.litert.TensorType
-import com.google.ai.edge.litert.deployment.AiPackModelProvider
 
 
 class Interpreter (private val context: Context){
@@ -52,7 +50,7 @@ class Interpreter (private val context: Context){
             deviceCapabilities.add("DSP")
         }
         if(QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_QUANTIZED) || QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)){
-            deviceCapabilities.add("HTP")
+            //deviceCapabilities.add("HTP")
         }
         /*if(QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)){
             deviceCapabilities.add("HTP_FP16")
@@ -114,6 +112,7 @@ class Interpreter (private val context: Context){
             }
         }
         try {
+            liteRTNextModel.close()
             liteRTNextModel = CompiledModel.create(model.getLoadedModel(), lRTOptions,env)
             Log.i("Interpreter","Interpreter instantiated successfully.")
             initialized=true
@@ -210,11 +209,9 @@ class Interpreter (private val context: Context){
         return initialized
     }
     fun close(){
-        if(initialized){
-            inputBuffer.forEach {  it.close() }
-            outputBuffer.forEach {  it.close() }
-            liteRTNextModel.close()
-        }
+        inputBuffer.forEach {  it.close() }
+        outputBuffer.forEach {  it.close() }
+        liteRTNextModel.close()
         initialized=false
     }
     fun run(){
@@ -260,6 +257,9 @@ class Interpreter (private val context: Context){
         inputBuffer[0].writeFloat(input)
     }
     fun readOutputBuffer(): FloatArray{
+        val a = outputBuffer[0].readInt()
+        val b = outputBuffer[0].readInt8()
+        a + b.size
         return outputBuffer[0].readFloat()
     }
     fun getExecutingDevice():String{

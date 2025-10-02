@@ -8,9 +8,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-version='2.34.0.250424' #2.38.0.250901 #2.37.1.250807
-QAIRT_URL="https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${version}/v${version}.zip"
-QAIRT_CONTENT_DIR="qairt/${version}"
+QAIRT_URL='https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.38.0.250901/v2.38.0.250901.zip'
+QAIRT_CONTENT_DIR='qairt/2.38.0.250901'
 
 pushd "$tmp_dir"
 wget "$QAIRT_URL" -O qairt_sdk.zip

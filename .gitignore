@@ -8,7 +8,7 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 .DS_Store
-/build
+build
 /captures
 .externalNativeBuild
 .cxx
@@ -18,3 +18,5 @@ opencv
 /app/src/main/ml/
 .idea
 /app/src/main/assets/models/*
+litert_npu_runtime_libraries/qualcomm_runtime_v73/build
+litert_npu_runtime_libraries/runtime_strings/build/*

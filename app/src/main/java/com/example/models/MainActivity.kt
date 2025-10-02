@@ -110,7 +110,6 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                             continue
                         }
                     }
-                    System.gc()
                 }
             }
         }
@@ -202,7 +201,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
         //System.gc()
         Log.i(TAG,"Executing ${model.getModelName()} on ${interpreter.getExecutingDevice()}. Starting benchmark...")
         model.clearResultList()
-        for (i in 0 until 100) {
+        for (i in 0 until datasetChunk) {
             nanoTik = System.nanoTime()
             model.preprocess(dataset[i])
             /*if(interpreter.isInputQuantized()){
