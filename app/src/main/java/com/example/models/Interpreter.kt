@@ -46,9 +46,9 @@ class Interpreter (private val context: Context){
             deviceCapabilities.add("GPU_FP32")
             deviceCapabilities.add("GPU_FP16")
         }
-        if(QnnDelegate.checkCapability(QnnDelegate.Capability.DSP_RUNTIME)){
+        /*if(QnnDelegate.checkCapability(QnnDelegate.Capability.DSP_RUNTIME)){
             deviceCapabilities.add("DSP")
-        }
+        }*/
         if(QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_QUANTIZED) || QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)){
             //deviceCapabilities.add("HTP")
         }
@@ -112,7 +112,6 @@ class Interpreter (private val context: Context){
             }
         }
         try {
-            liteRTNextModel.close()
             liteRTNextModel = CompiledModel.create(model.getLoadedModel(), lRTOptions,env)
             Log.i("Interpreter","Interpreter instantiated successfully.")
             initialized=true
@@ -163,7 +162,7 @@ class Interpreter (private val context: Context){
         model.setIOShape(inputInfo.shape,outputInfo.shape)
         Log.i("Interpreter","Initialized input and output buffers")
     }*/
-    private fun initQNNDelegate(): Delegate {
+    /*private fun initQNNDelegate(): Delegate {
         val options = QnnDelegate.Options()
         options.setLogLevel(QnnDelegate.Options.LogLevel.LOG_LEVEL_ERROR)
         options.skelLibraryDir = context.applicationInfo.nativeLibraryDir
@@ -201,7 +200,7 @@ class Interpreter (private val context: Context){
             }
         }
         return  QnnDelegate(options)
-    }
+    }*/
     fun getDeviceList():List<String>{
         return deviceList
     }

@@ -86,7 +86,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
                     model.setModelFullPath(modelQuantList[k].toString())
                     model.setModelName(modelQuantList[k].toString().removeSuffix(".tflite"))
                     model.loadModelFile()
-                    for(l in deviceList.indices){
+                    for(l in deviceList.indices.reversed()){
                         interpreter.selectExecutionDevice(l)
                         /*try{
                             interpreter.initializeOptions()
@@ -255,6 +255,7 @@ class MainActivity : AppCompatActivity(), AdapterView.OnItemSelectedListener {
             //activityMainBinding.energyVal.text="AVG: ${energyVal} uAh"
             activityMainBinding.button.isEnabled = true
         }
+        interpreter.close()
     }
     public override fun onDestroy() {
         interpreter.close()
