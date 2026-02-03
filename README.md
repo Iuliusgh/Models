@@ -1,0 +1,1 @@
+This repository contains an Android app to run YOLO and ResNet Models used for my Master's Thesis. It is designed to run the models in CPU, GPU and NPU on a Snapdragon SM-8550AC SoC. LiteRt Next is used for CPU and GPU exeution, and LiteRT for NPU to avoid issues as per LiteRT Next version 2.0
